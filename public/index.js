@@ -832,9 +832,15 @@ loadMoreBtn.addEventListener("click", () => {
 async function loadStoriesClient(page = 1) {
   loadMoreBtn.disabled = true;
   loadMoreBtn.innerHTML = `${SPINNER_SVG}<span>Loading…</span>`;
+  
+  // Add loading status
+  statusDot.classList.add("animate-pulse");
+  statusTextEl.textContent = "Loading…";
 
   if (page === 1) {
     feedList.innerHTML = "";
+    // Add skeleton cards for initial load
+    for (let i = 0; i < 5; i++) feedList.appendChild(createFeedSkeletonCard());
   } else {
     for (let i = 0; i < 3; i++) feedList.appendChild(createFeedSkeletonCard());
   }
@@ -863,6 +869,11 @@ async function loadStoriesClient(page = 1) {
     }
   } catch (e) {
     console.error("Load stories error:", e);
+    
+    // Remove loading status
+    statusDot.classList.remove("animate-pulse");
+    statusTextEl.textContent = "Error";
+    
     feedList
       .querySelectorAll("[data-feed-skeleton]")
       .forEach((el) => el.remove());
