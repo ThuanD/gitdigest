@@ -1,15 +1,10 @@
-const LIST_CACHE_TTL = 30 * 60 * 1000; // 30 minutes - avoid GitHub rate limits
-const SUMMARY_CACHE_MAX = 400;
-const EMBED_CHECK_CACHE_MAX = 600;
+const LIST_CACHE_TTL = 30 * 60 * 1000;
+const SUMMARY_CACHE_MAX = 500; // max entries (was mistakenly set to TTL ms)
+const REPO_CACHE_MAX = 200; // max entries (was mistakenly set to TTL ms)
 
-const listIdCaches = {
-  daily: { time: 0, repos: [] },
-  weekly: { time: 0, repos: [] },
-  monthly: { time: 0, repos: [] },
-};
+const listIdCaches = new Map(); // key: "period-language" — was plain object, lookup never matched
 const summaryCache = new Map();
-/** @type {Map<string, { t: number, result: { embeddable: boolean, reason: string | null } }>} */
-const embedCheckCache = new Map();
+const repoCache = new Map();
 
 function corsHeaders() {
   return {
@@ -37,172 +32,6 @@ function openAiKeyFromRequest(request) {
   return (request.headers.get("x-openai-key") || "").trim();
 }
 
-/** Merge duplicate Content-Security-Policy header values from the response. */
-function combinedCspHeader(headers) {
-  const parts = [];
-  for (const [k, v] of headers) {
-    if (k.toLowerCase() === "content-security-policy") parts.push(v);
-  }
-  return parts.length
-    ? parts.join("; ")
-    : headers.get("Content-Security-Policy") || "";
-}
-
-function extractFrameAncestors(cspValue) {
-  if (!cspValue) return "";
-  for (const piece of cspValue.split(";")) {
-    const s = piece.trim();
-    if (/^frame-ancestors\s/i.test(s)) {
-      return s.replace(/^frame-ancestors\s+/i, "").trim();
-    }
-  }
-  return "";
-}
-
-/**
- * Best-effort from response headers only. False negatives/positives are possible.
- * `parentOrigin` should be the embedding page origin (e.g. https://your-app.pages.dev).
- */
-function embeddableFromHeaders(headers, parentOrigin) {
-  const xfo = (headers.get("X-Frame-Options") || "").trim().toUpperCase();
-  if (xfo === "DENY" || xfo === "SAMEORIGIN") {
-    return { embeddable: false, reason: "x_frame_options" };
-  }
-
-  const csp = combinedCspHeader(headers);
-  const faRaw = extractFrameAncestors(csp);
-  if (!faRaw) {
-    return { embeddable: true, reason: null };
-  }
-
-  if (/\b'none'\b/i.test(faRaw)) {
-    return { embeddable: false, reason: "csp_frame_ancestors" };
-  }
-  if (/^\s*'self'\s*$/i.test(faRaw)) {
-    return { embeddable: false, reason: "csp_frame_ancestors" };
-  }
-
-  let parent = "";
-  try {
-    if (parentOrigin) parent = new URL(parentOrigin).origin;
-  } catch {
-    parent = "";
-  }
-
-  if (parent) {
-    const tokens = faRaw.match(/(?:'[^']*'|[^\s']+)/g) || [];
-    let allowed = false;
-    for (const raw of tokens) {
-      const t =
-        raw.startsWith("'") && raw.endsWith("'") ? raw.slice(1, -1) : raw;
-      if (t === "*") {
-        allowed = true;
-        break;
-      }
-      if (t.toLowerCase() === "self") continue;
-      try {
-        const u = new URL(t);
-        if (u.origin === parent) {
-          allowed = true;
-          break;
-        }
-      } catch {
-        /* ignore malformed token */
-      }
-    }
-    if (!allowed) {
-      return { embeddable: false, reason: "csp_frame_ancestors" };
-    }
-  }
-
-  return { embeddable: true, reason: null };
-}
-
-async function handleEmbedCheck(url) {
-  const target = url.searchParams.get("url");
-  const parentOrigin = (url.searchParams.get("parent") || "").trim();
-  if (!target || !isPublicHttpUrlForFetch(target)) {
-    return json({ embeddable: false, error: "invalid_url" }, 400);
-  }
-
-  let canonical;
-  try {
-    canonical = new URL(target).href;
-  } catch {
-    return json({ embeddable: false, error: "invalid_url" }, 400);
-  }
-
-  const cacheKey = `${canonical}\0${parentOrigin}`;
-  const hit = embedCheckCache.get(cacheKey);
-  if (hit && Date.now() - hit.t < LIST_CACHE_TTL) {
-    return json({ ...hit.result, cached: true });
-  }
-
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 7000);
-  try {
-    let res = await fetch(canonical, {
-      method: "HEAD",
-      redirect: "follow",
-      signal: controller.signal,
-    });
-    if (res.status === 405 || res.status === 501) {
-      res = await fetch(canonical, {
-        method: "GET",
-        redirect: "follow",
-        signal: controller.signal,
-        headers: { Range: "bytes=0-0" },
-      });
-    }
-    const result = embeddableFromHeaders(res.headers, parentOrigin);
-    try {
-      if (res.body?.cancel) await res.body.cancel();
-    } catch {
-      /* ignore */
-    }
-    embedCheckCacheSet(cacheKey, { t: Date.now(), result });
-    return json({ ...result, cached: false });
-  } catch {
-    return json({ embeddable: true, reason: "check_failed" });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-/** Block obvious SSRF targets when fetching arbitrary story URLs. */
-function isPublicHttpUrlForFetch(urlString) {
-  try {
-    const u = new URL(urlString);
-    if (u.username || u.password) return false;
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    const host = u.hostname.toLowerCase();
-    if (
-      host === "localhost" ||
-      host === "0.0.0.0" ||
-      host === "[::1]" ||
-      host.endsWith(".localhost") ||
-      host.endsWith(".local")
-    ) {
-      return false;
-    }
-    const ipv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
-    if (ipv4.test(host)) {
-      const p = host.split(".").map((x) => parseInt(x, 10));
-      if (p.some((n) => n > 255)) return false;
-      if (p[0] === 10) return false;
-      if (p[0] === 127) return false;
-      if (p[0] === 0) return false;
-      if (p[0] === 192 && p[1] === 168) return false;
-      if (p[0] === 169 && p[1] === 254) return false;
-      if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return false;
-      if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function summaryCacheSet(key, value) {
   if (summaryCache.size >= SUMMARY_CACHE_MAX && !summaryCache.has(key)) {
     const first = summaryCache.keys().next().value;
@@ -211,44 +40,37 @@ function summaryCacheSet(key, value) {
   summaryCache.set(key, value);
 }
 
-function embedCheckCacheSet(key, entry) {
-  if (
-    embedCheckCache.size >= EMBED_CHECK_CACHE_MAX &&
-    !embedCheckCache.has(key)
-  ) {
-    const first = embedCheckCache.keys().next().value;
-    embedCheckCache.delete(first);
+function repoCacheSet(key, value) {
+  if (repoCache.size >= REPO_CACHE_MAX && !repoCache.has(key)) {
+    const first = repoCache.keys().next().value;
+    repoCache.delete(first);
   }
-  embedCheckCache.set(key, entry);
+  repoCache.set(key, value);
 }
 
 async function handleStories(url) {
   try {
-    const period = url.searchParams.get("period") || "daily"; // daily, weekly, monthly
+    const period = url.searchParams.get("period") || "daily";
     const language = url.searchParams.get("lang") || "";
     const page = parseInt(url.searchParams.get("page") || "1", 10) || 1;
     const limit = 15;
 
-    // Map period to GitHub trending params
     const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
     const since = sinceMap[period] || "daily";
 
     const cacheKey = `${period}-${language}`;
-    let cache = listIdCaches[cacheKey];
-
-    let repos = cache?.repos;
+    const cached = listIdCaches.get(cacheKey);
+    let repos = cached?.repos;
 
     if (
       !repos ||
       repos.length === 0 ||
-      Date.now() - cache.time > LIST_CACHE_TTL
+      Date.now() - (cached?.time ?? 0) > LIST_CACHE_TTL
     ) {
-      // Scrape GitHub trending page directly
       const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
 
       const res = await fetch(trendingUrl, {
         headers: {
-          // Required headers to avoid 429 errors
           "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
           Accept: "text/html",
         },
@@ -258,8 +80,7 @@ async function handleStories(url) {
         throw new Error(`GitHub trending fetch failed: ${res.status}`);
 
       repos = await parseTrendingPage(res);
-
-      listIdCaches[cacheKey] = { time: Date.now(), repos };
+      listIdCaches.set(cacheKey, { time: Date.now(), repos });
     }
 
     const startIndex = (page - 1) * limit;
@@ -280,7 +101,6 @@ async function parseTrendingPage(response) {
   const repos = [];
   let current = null;
 
-  // HTMLRewriter stream-parse HTML without DOM
   const rewriter = new HTMLRewriter()
     .on("article.Box-row", {
       element() {
@@ -293,7 +113,6 @@ async function parseTrendingPage(response) {
           forks: 0,
           starsToday: 0,
           url: "",
-          avatar: "",
         };
         repos.push(current);
       },
@@ -302,7 +121,6 @@ async function parseTrendingPage(response) {
       element(el) {
         if (!current) return;
         const href = el.getAttribute("href") || "";
-        // href format: "/owner/repo"
         current.fullName = href.replace(/^\//, "");
         current.url = `https://github.com${href}`;
         const parts = current.fullName.split("/");
@@ -341,10 +159,8 @@ async function parseTrendingPage(response) {
       },
     });
 
-  // Must consume entire response body
   await rewriter.transform(response).arrayBuffer();
 
-  // Clean up text fields
   return repos.map((repo) => {
     const parseNum = (str = "") =>
       parseInt((str || "").replace(/,/g, "").trim(), 10) || 0;
@@ -352,6 +168,7 @@ async function parseTrendingPage(response) {
     const starsToday = parseNum(
       (repo._todayRaw || "").replace(/stars today/i, "").trim(),
     );
+    const forks = parseNum(repo._forksRaw);
 
     return {
       id: repo.fullName,
@@ -361,28 +178,13 @@ async function parseTrendingPage(response) {
       description: repo.description.trim(),
       language: repo.language.trim(),
       stars: parseNum(repo._starsRaw),
-      forks: parseNum(repo._forksRaw),
+      forks,
       starsToday,
       url: repo.url,
       by: repo.owner,
       score: starsToday,
     };
   });
-}
-
-function getDateQuery(period) {
-  const now = new Date();
-  if (period === "daily") {
-    const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-    return `>${twoDaysAgo.toISOString().split("T")[0]}`;
-  } else if (period === "weekly") {
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    return `>${weekAgo.toISOString().split("T")[0]}`;
-  } else {
-    // monthly
-    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return `>${monthAgo.toISOString().split("T")[0]}`;
-  }
 }
 
 function mapGitHubRepo(repo) {
@@ -414,10 +216,7 @@ async function handleSummarize(request, url, env) {
 
   const cacheKey = `${repoId}_${lang}`;
   if (summaryCache.has(cacheKey)) {
-    return json({
-      summary: summaryCache.get(cacheKey),
-      cached: true,
-    });
+    return json({ summary: summaryCache.get(cacheKey), cached: true });
   }
 
   const apiKey =
@@ -433,15 +232,10 @@ async function handleSummarize(request, url, env) {
   }
 
   try {
-    // Check if repoId is in "owner/repo" format or numeric ID
-    let repoUrl;
-    if (repoId.includes("/")) {
-      repoUrl = `https://api.github.com/repos/${repoId}`;
-    } else {
-      repoUrl = `https://api.github.com/repositories/${repoId}`;
-    }
+    const repoUrl = repoId.includes("/")
+      ? `https://api.github.com/repos/${repoId}`
+      : `https://api.github.com/repositories/${repoId}`;
 
-    // Fetch repository details from GitHub API
     const repoRes = await fetch(repoUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
@@ -449,13 +243,10 @@ async function handleSummarize(request, url, env) {
       },
     });
 
-    if (!repoRes.ok) {
-      throw new Error(`GitHub API error: ${repoRes.status}`);
-    }
+    if (!repoRes.ok) throw new Error(`GitHub API error: ${repoRes.status}`);
 
     const repo = await repoRes.json();
 
-    // Try to fetch README content
     let readmeContent = "";
     try {
       const readmeRes = await fetch(
@@ -467,13 +258,9 @@ async function handleSummarize(request, url, env) {
           },
         },
       );
-
       if (readmeRes.ok) {
         const readmeData = await readmeRes.json();
-        // GitHub returns base64 encoded content
-        readmeContent = atob(readmeData.content);
-        // Clean up markdown
-        readmeContent = readmeContent
+        readmeContent = atob(readmeData.content)
           .replace(/```[\s\S]*?```/g, "[CODE BLOCK]")
           .replace(/`[^`]*`/g, "[CODE]")
           .replace(/!\[.*?\]\(.*?\)/g, "[IMAGE]")
@@ -494,10 +281,7 @@ async function handleSummarize(request, url, env) {
     contentToSummarize += `Stars: ${repo.stargazers_count}\n`;
     contentToSummarize += `Forks: ${repo.forks_count}\n`;
     contentToSummarize += `Topics: ${(repo.topics || []).join(", ")}\n`;
-
-    if (readmeContent) {
-      contentToSummarize += `\nREADME:\n${readmeContent}`;
-    }
+    if (readmeContent) contentToSummarize += `\nREADME:\n${readmeContent}`;
 
     const systemPrompt = `You are an expert technical summarizer specializing in GitHub repositories and open source projects.
 
@@ -512,15 +296,12 @@ Output requirements:
 
     const userPrompt = `Analyze and summarize this GitHub repository for developers. Explain what the project does, its technical implementation, key features, and why it's gaining traction.\n\n${contentToSummarize}`;
 
-    // Determine API provider based on key format
-    let apiUrl, model, requestBody, errorMessage;
+    let apiUrl, requestBody;
 
     if (apiKey.startsWith("gsk_")) {
-      // Groq API (OpenAI-compatible)
       apiUrl = "https://api.groq.com/openai/v1/chat/completions";
-      model = "llama-3.3-70b-versatile";
       requestBody = {
-        model: model,
+        model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -528,14 +309,10 @@ Output requirements:
         temperature: 0.45,
         max_tokens: 4096,
       };
-      errorMessage =
-        "Missing Groq API key. Add your key in settings or set OPENAI_API_KEY as a Worker secret.";
     } else if (apiKey.startsWith("sk-")) {
-      // OpenAI API
       apiUrl = "https://api.openai.com/v1/chat/completions";
-      model = "gpt-4o-mini";
       requestBody = {
-        model: model,
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -543,111 +320,86 @@ Output requirements:
         temperature: 0.45,
         max_tokens: 4096,
       };
-      errorMessage =
-        "Missing OpenAI API key. Add your key in settings or set OPENAI_API_KEY as a Worker secret.";
     } else {
-      // Gemini API (different format)
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+      // Gemini — fixed model name (was "gemini-3-flash-preview" which doesn't exist)
+      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `${systemPrompt}\n\n${userPrompt}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.45,
-          maxOutputTokens: 4096,
-        },
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+        generationConfig: { temperature: 0.45, maxOutputTokens: 4096 },
       };
-      errorMessage =
-        "Missing Gemini API key. Add your key in settings or set OPENAI_API_KEY as a Worker secret.";
     }
 
-    const headers = {
-      "Content-Type": "application/json",
-    };
-
-    // Gemini uses different auth (key in URL)
+    const headers = { "Content-Type": "application/json" };
     if (!apiKey.startsWith("AIza")) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
 
     const aiRes = await fetch(apiUrl, {
       method: "POST",
-      headers: headers,
+      headers,
       body: JSON.stringify(requestBody),
     });
 
     const aiData = await aiRes.json();
-    if (aiData.error) {
-      throw new Error(aiData.error.message || "API error");
-    }
+    if (aiData.error) throw new Error(aiData.error.message || "API error");
 
-    let summary;
-    if (apiKey.startsWith("AIza")) {
-      // Gemini response format
-      summary = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
-    } else {
-      // OpenAI/Groq response format
-      summary = aiData.choices?.[0]?.message?.content;
-    }
+    const summary = apiKey.startsWith("AIza")
+      ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
+      : aiData.choices?.[0]?.message?.content;
 
-    if (!summary) {
-      throw new Error("No content received from API");
-    }
+    if (!summary) throw new Error("No content received from API");
+
     summaryCacheSet(cacheKey, summary);
-
     return json({ summary, cached: false });
   } catch (error) {
     console.error("summarize:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to generate summary.";
-    return json({ error: message }, 500);
+    return json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to generate summary.",
+      },
+      500,
+    );
   }
 }
 
-async function handleRepoDetails(url) {
+async function handleRepoDetails(url, env) {
   const repoId = url.searchParams.get("id");
+  if (!repoId) return json({ error: "Missing repository ID" }, 400);
 
-  if (!repoId) {
-    return json({ error: "Missing repository ID" }, 400);
+  const cached = repoCache.get(repoId);
+  if (cached && Date.now() - cached.t < LIST_CACHE_TTL) {
+    return json({ ...cached.result, cached: true });
   }
 
   try {
-    // Check if repoId is in "owner/repo" format or numeric ID
-    let repoUrl;
-    if (repoId.includes("/")) {
-      repoUrl = `https://api.github.com/repos/${repoId}`;
-    } else {
-      repoUrl = `https://api.github.com/repositories/${repoId}`;
-    }
+    const repoUrl = repoId.includes("/")
+      ? `https://api.github.com/repos/${repoId}`
+      : `https://api.github.com/repositories/${repoId}`;
+
+    const ghHeaders = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Github-Trending-Digest-Worker",
+      ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+    };
 
     const [repoRes, readmeRes] = await Promise.all([
-      fetch(repoUrl, {
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Github-Trending-Digest-Worker",
-          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-        },
-      }),
-      fetch(`${repoUrl}/readme`, {
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Github-Trending-Digest-Worker",
-          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-        },
-      }).catch(() => null),
+      fetch(repoUrl, { headers: ghHeaders }),
+      fetch(`${repoUrl}/readme`, { headers: ghHeaders }).catch(() => null),
     ]);
 
     if (!repoRes.ok) {
       if (repoRes.status === 403) {
         const errorData = await repoRes.json().catch(() => ({}));
-        if (errorData.message?.includes('rate limit')) {
-          return json({ error: "GitHub API rate limit exceeded. Please try again later." }, 429);
+        if (errorData.message?.includes("rate limit")) {
+          return json(
+            {
+              error: "GitHub API rate limit exceeded. Please try again later.",
+            },
+            429,
+          );
         }
       }
       throw new Error(`GitHub API error: ${repoRes.status}`);
@@ -655,52 +407,50 @@ async function handleRepoDetails(url) {
 
     const repo = await repoRes.json();
     let readmeContent = "";
-
-    if (readmeRes && readmeRes.ok) {
+    if (readmeRes?.ok) {
       const readmeData = await readmeRes.json();
       readmeContent = atob(readmeData.content);
     }
 
-    return json({
+    const result = {
       ...mapGitHubRepo(repo),
       readme_content: readmeContent,
       raw_api_response: repo,
-    });
+    };
+
+    repoCacheSet(repoId, { t: Date.now(), result });
+    return json(result);
   } catch (error) {
     console.error("Repo details fetch error:", error);
     return json({ error: "Failed to fetch repository details" }, 500);
   }
 }
 
-async function handleGitHubIssues(url) {
+async function handleGitHubIssues(url, env) {
   const owner = url.searchParams.get("owner");
   const repo = url.searchParams.get("repo");
-
-  if (!owner || !repo) {
+  if (!owner || !repo)
     return json({ error: "Missing owner or repo parameters" }, 400);
-  }
 
   try {
     const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&sort=created&direction=desc&per_page=25`;
-
     const response = await fetch(issuesUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "Github-Trending-Digest-Worker",
+        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
       },
     });
 
     if (!response.ok) {
-      if (response.status === 404) {
+      if (response.status === 404)
         return json({ error: "Repository not found or no issues" }, 404);
-      }
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
     const issues = await response.json();
-
     return json({
-      issues: issues,
+      issues,
       repo_url: `https://github.com/${owner}/${repo}`,
       count: issues.length,
     });
@@ -719,21 +469,10 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "") || "/";
 
-    if (path === "/api/stories") {
-      return handleStories(url);
-    }
-    if (path === "/api/repo") {
-      return handleRepoDetails(url);
-    }
-    if (path === "/api/issues") {
-      return handleGitHubIssues(url);
-    }
-    if (path === "/api/summarize") {
-      return handleSummarize(request, url, env);
-    }
-    if (path === "/api/embed-check") {
-      return handleEmbedCheck(url);
-    }
+    if (path === "/api/stories") return handleStories(url);
+    if (path === "/api/repo") return handleRepoDetails(url, env);
+    if (path === "/api/issues") return handleGitHubIssues(url, env);
+    if (path === "/api/summarize") return handleSummarize(request, url, env);
 
     return env.ASSETS.fetch(request);
   },

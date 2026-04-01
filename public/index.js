@@ -1,21 +1,16 @@
-const FEED_PAGE_SIZE = 15;
+// ─── Constants ────────────────────────────────────────────────────────────────
 const LS_READ_STATS = "readStats";
 const LS_READ_STORIES = "readStories";
-const LS_DAILY_IDS = "gh_daily_ids";
-const LS_DAILY_TIME = "gh_daily_time";
-const LS_WEEKLY_IDS = "gh_weekly_ids";
-const LS_WEEKLY_TIME = "gh_weekly_time";
-const LS_MONTHLY_IDS = "gh_monthly_ids";
-const LS_MONTHLY_TIME = "gh_monthly_time";
 const LS_FEED_KIND = "gh_digest_feed_kind";
 const LS_PREF_LANG = "preferredLang";
-const LS_OPENAI_KEY = "openai_api_key";
+const LS_API_KEY = "openai_api_key"; // value kept for backward compat
 
 const SUPPORTED_LANGUAGES = [
   { code: "en", name: "ENG" },
   { code: "vi", name: "VN" },
 ];
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -82,23 +77,6 @@ const MD_SANITIZE = {
   ],
 };
 
-const COMMENT_SANITIZE = {
-  ALLOWED_TAGS: [
-    "p",
-    "br",
-    "i",
-    "em",
-    "b",
-    "strong",
-    "code",
-    "pre",
-    "a",
-    "span",
-    "div",
-  ],
-  ALLOWED_ATTR: ["href", "rel", "target", "class"],
-};
-
 function markdownToSafeHtml(md) {
   const raw = marked.parse(String(md ?? ""));
   if (typeof DOMPurify !== "undefined" && DOMPurify.sanitize) {
@@ -107,14 +85,7 @@ function markdownToSafeHtml(md) {
   return raw;
 }
 
-function hnCommentHtmlSafe(html) {
-  const s = String(html ?? "");
-  if (typeof DOMPurify !== "undefined" && DOMPurify.sanitize) {
-    return DOMPurify.sanitize(s, COMMENT_SANITIZE);
-  }
-  return escapeHtml(s.replace(/<[^>]+>/g, ""));
-}
-
+// ─── State ────────────────────────────────────────────────────────────────────
 let currentLang = localStorage.getItem(LS_PREF_LANG) || "en";
 let activeCardId = null;
 let currentActiveStory = null;
@@ -122,56 +93,14 @@ let currentPage = 1;
 let hideReadActive = false;
 let feedKind = localStorage.getItem(LS_FEED_KIND) || "daily";
 
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
 const settingsModal = document.getElementById("settingsModal");
 const openSettingsBtn = document.getElementById("openSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const saveKeyBtn = document.getElementById("saveKeyBtn");
 const clearKeyBtn = document.getElementById("clearKeyBtn");
-const notificationContainer = document.getElementById("notificationContainer");
 const apiKeyInput = document.getElementById("apiKeyInput");
-
-openSettingsBtn.addEventListener("click", () => {
-  apiKeyInput.value = localStorage.getItem(LS_OPENAI_KEY) || "";
-  settingsModal.showModal();
-});
-closeSettingsBtn.addEventListener("click", () => settingsModal.close());
-
-saveKeyBtn.addEventListener("click", () => {
-  if (apiKeyInput.value.trim()) {
-    localStorage.setItem(LS_OPENAI_KEY, apiKeyInput.value.trim());
-    settingsModal.close();
-    if (currentActiveStory && activeCardId) {
-      handleCardClick(
-        currentActiveStory,
-        document.getElementById(`card-${activeCardId}`),
-      );
-    }
-  }
-});
-
-clearKeyBtn.addEventListener("click", () => {
-  localStorage.removeItem(LS_OPENAI_KEY);
-  apiKeyInput.value = "";
-});
-
 const langSelect = document.getElementById("langSelect");
-SUPPORTED_LANGUAGES.forEach((lang) => {
-  const option = document.createElement("option");
-  option.value = lang.code;
-  option.textContent = lang.name;
-  if (lang.code === currentLang) option.selected = true;
-  langSelect.appendChild(option);
-});
-
-langSelect.addEventListener("change", (e) => {
-  currentLang = e.target.value;
-  localStorage.setItem(LS_PREF_LANG, currentLang);
-  if (currentActiveStory && activeCardId) {
-    const currentCard = document.getElementById(`card-${activeCardId}`);
-    handleCardClick(currentActiveStory, currentCard);
-  }
-});
-
 const feedList = document.getElementById("feedList");
 const statusDot = document.getElementById("statusDot");
 const loadMoreBtn = document.getElementById("loadMoreBtn");
@@ -187,17 +116,13 @@ const readerViewToggle = document.getElementById("readerViewToggle");
 const readerViewSummaryBtn = document.getElementById("readerViewSummaryBtn");
 const readerViewSourceBtn = document.getElementById("readerViewSourceBtn");
 const sourceFramePanel = document.getElementById("sourceFramePanel");
-const sourceEmbedChecking = document.getElementById("sourceEmbedChecking");
-const sourceEmbedError = document.getElementById("sourceEmbedError");
 const readerSourceIframeWrap = document.getElementById(
   "readerSourceIframeWrap",
 );
-const readerSourceIframe = document.getElementById("readerSourceIframe");
-let sourceEmbedRequestSeq = 0;
 const readerCommentsToggleWrap = document.getElementById(
   "readerCommentsToggleWrap",
 );
-const readerHnBtn = document.getElementById("readerHnBtn");
+const readerIssuesBtn = document.getElementById("readerIssuesBtn"); // was readerHnBtn
 const readerWorkspace = document.getElementById("readerWorkspace");
 const commentsPane = document.getElementById("commentsPane");
 const commentsBody = document.getElementById("commentsBody");
@@ -210,58 +135,69 @@ const activityGraph = document.getElementById("activityGraph");
 const feedKindDaily = document.getElementById("feedKindDaily");
 const feedKindWeekly = document.getElementById("feedKindWeekly");
 const feedKindMonthly = document.getElementById("feedKindMonthly");
+const hideReadToggle = document.getElementById("hideReadToggle");
+const toggleKnob = document.getElementById("toggleKnob");
 
-function getFeedStorageKeys() {
-  switch (feedKind) {
-    case "daily":
-      return { ids: LS_DAILY_IDS, time: LS_DAILY_TIME };
-    case "weekly":
-      return { ids: LS_WEEKLY_IDS, time: LS_WEEKLY_TIME };
-    case "monthly":
-      return { ids: LS_MONTHLY_IDS, time: LS_MONTHLY_TIME };
-    default:
-      return { ids: LS_DAILY_IDS, time: LS_DAILY_TIME };
+// ─── Settings modal ───────────────────────────────────────────────────────────
+openSettingsBtn.addEventListener("click", () => {
+  apiKeyInput.value = localStorage.getItem(LS_API_KEY) || "";
+  settingsModal.showModal();
+});
+closeSettingsBtn.addEventListener("click", () => settingsModal.close());
+
+saveKeyBtn.addEventListener("click", () => {
+  if (apiKeyInput.value.trim()) {
+    localStorage.setItem(LS_API_KEY, apiKeyInput.value.trim());
+    settingsModal.close();
+    if (currentActiveStory && activeCardId) {
+      handleCardClick(
+        currentActiveStory,
+        document.getElementById(`card-${activeCardId}`),
+      );
+    }
   }
-}
+});
 
-function getFeedListUrl() {
-  return `/api/stories?period=${feedKind}`;
-}
+clearKeyBtn.addEventListener("click", () => {
+  localStorage.removeItem(LS_API_KEY);
+  apiKeyInput.value = "";
+});
 
+// ─── Language selector ────────────────────────────────────────────────────────
+SUPPORTED_LANGUAGES.forEach((lang) => {
+  const option = document.createElement("option");
+  option.value = lang.code;
+  option.textContent = lang.name;
+  if (lang.code === currentLang) option.selected = true;
+  langSelect.appendChild(option);
+});
+
+langSelect.addEventListener("change", (e) => {
+  currentLang = e.target.value;
+  localStorage.setItem(LS_PREF_LANG, currentLang);
+  if (currentActiveStory && activeCardId) {
+    handleCardClick(
+      currentActiveStory,
+      document.getElementById(`card-${activeCardId}`),
+    );
+  }
+});
+
+// ─── Feed kind (Daily / Weekly / Monthly) ────────────────────────────────────
 function syncFeedKindButtons() {
-  if (feedKindDaily)
-    feedKindDaily.classList.toggle("feed-kind-active", feedKind === "daily");
-  if (feedKindWeekly)
-    feedKindWeekly.classList.toggle("feed-kind-active", feedKind === "weekly");
-  if (feedKindMonthly)
-    feedKindMonthly.classList.toggle(
-      "feed-kind-active",
-      feedKind === "monthly",
-    );
-
-  if (feedKindDaily)
-    feedKindDaily.setAttribute(
-      "aria-pressed",
-      feedKind === "daily" ? "true" : "false",
-    );
-  if (feedKindWeekly)
-    feedKindWeekly.setAttribute(
-      "aria-pressed",
-      feedKind === "weekly" ? "true" : "false",
-    );
-  if (feedKindMonthly)
-    feedKindMonthly.setAttribute(
-      "aria-pressed",
-      feedKind === "monthly" ? "true" : "false",
-    );
+  [feedKindDaily, feedKindWeekly, feedKindMonthly].forEach((btn) => {
+    const kind = btn.id.replace("feedKind", "").toLowerCase();
+    btn.classList.toggle("feed-kind-active", feedKind === kind);
+    btn.setAttribute("aria-pressed", feedKind === kind ? "true" : "false");
+  });
 }
 
 function resetReaderForFeedSwitch() {
   activeCardId = null;
   currentActiveStory = null;
-  feedList.querySelectorAll(".story-card.is-active").forEach((el) => {
-    el.classList.remove("is-active");
-  });
+  feedList
+    .querySelectorAll(".story-card.is-active")
+    .forEach((el) => el.classList.remove("is-active"));
   emptyState.classList.remove("hidden");
   readerWorkspace.classList.add("hidden");
   readerWorkspace.classList.remove("flex");
@@ -291,62 +227,7 @@ feedKindWeekly.addEventListener("click", () => setFeedKind("weekly"));
 feedKindMonthly.addEventListener("click", () => setFeedKind("monthly"));
 syncFeedKindButtons();
 
-const SPINNER_SVG = `<svg class="animate-spin h-3.5 w-3.5 text-hn shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
-
-function createFeedSkeletonCard() {
-  const el = document.createElement("div");
-  el.setAttribute("data-feed-skeleton", "1");
-  el.className =
-    "story-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
-  el.innerHTML = `
-          <div class="mb-3 space-y-2.5">
-            <div class="ui-skeleton h-3.5 rounded-md" style="width:92%"></div>
-            <div class="ui-skeleton h-3.5 rounded-md" style="width:76%"></div>
-          </div>
-          <div class="flex items-center justify-between pt-3 border-t border-borderSubtle/50">
-            <div class="flex gap-2">
-              <div class="ui-skeleton h-5 w-16 rounded-md"></div>
-              <div class="ui-skeleton h-5 w-14 rounded-md"></div>
-            </div>
-            <div class="ui-skeleton h-3 w-28 rounded-md"></div>
-          </div>`;
-  return el;
-}
-
-function readerSummarySkeletonHTML() {
-  return `<div class="w-full space-y-3 animate-fade-in opacity-0">
-          <div class="ui-skeleton h-4 rounded-md" style="width:88%"></div>
-          <div class="ui-skeleton h-4 rounded-md w-full"></div>
-          <div class="ui-skeleton h-4 rounded-md" style="width:94%"></div>
-          <div class="ui-skeleton h-4 rounded-md" style="width:72%"></div>
-          <div class="ui-skeleton h-4 rounded-md w-full"></div>
-          <div class="ui-skeleton h-4 rounded-md" style="width:56%"></div>
-        </div>`;
-}
-
-function commentsThreadLoadingHTML() {
-  return `<div class="hn-thread-loading px-3 py-4 space-y-4">
-          <div class="flex items-center gap-2.5 text-xs font-mono text-textMuted">
-            ${SPINNER_SVG}
-            <span>Fetching thread…</span>
-          </div>
-          <div class="space-y-2.5">
-            ${[1, 2, 3]
-              .map(
-                () => `<div class="rounded-lg border border-borderSubtle bg-surface/40 p-3 space-y-2">
-              <div class="flex gap-2"><div class="ui-skeleton h-3 w-24 rounded"></div><div class="ui-skeleton h-3 w-12 rounded"></div></div>
-              <div class="ui-skeleton h-3 rounded w-full"></div>
-              <div class="ui-skeleton h-3 rounded" style="width:85%"></div>
-            </div>`,
-              )
-              .join("")}
-          </div>
-        </div>`;
-}
-
-const hideReadToggle = document.getElementById("hideReadToggle");
-const toggleKnob = document.getElementById("toggleKnob");
-
+// ─── Hide-read toggle ─────────────────────────────────────────────────────────
 hideReadToggle.addEventListener("click", () => {
   hideReadActive = !hideReadActive;
   document.body.classList.toggle("hide-read-active", hideReadActive);
@@ -361,25 +242,42 @@ hideReadToggle.addEventListener("click", () => {
   }
 });
 
-function timeAgo(unixTimestamp) {
-  if (!unixTimestamp || isNaN(unixTimestamp)) return "recently";
-  const seconds = Math.floor(
-    (new Date() - new Date(unixTimestamp * 1000)) / 1000,
-  );
-  if (isNaN(seconds) || seconds < 0) return "recently";
-  let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + "y ago";
-  interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + "mo ago";
-  interval = seconds / 86400;
-  if (interval > 1) return Math.floor(interval) + "d ago";
-  interval = seconds / 3600;
-  if (interval > 1) return Math.floor(interval) + "h ago";
-  interval = seconds / 60;
-  if (interval > 1) return Math.floor(interval) + "m ago";
-  return Math.floor(seconds) + "s ago";
+// ─── Spinner SVG ──────────────────────────────────────────────────────────────
+const SPINNER_SVG = `<svg class="animate-spin h-3.5 w-3.5 text-hn shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+
+// ─── Skeleton cards ───────────────────────────────────────────────────────────
+function createFeedSkeletonCard() {
+  const el = document.createElement("div");
+  el.setAttribute("data-feed-skeleton", "1");
+  el.className =
+    "story-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
+  el.innerHTML = `
+    <div class="mb-3 space-y-2.5">
+      <div class="ui-skeleton h-3.5 rounded-md" style="width:92%"></div>
+      <div class="ui-skeleton h-3.5 rounded-md" style="width:76%"></div>
+    </div>
+    <div class="flex items-center justify-between pt-3 border-t border-borderSubtle/50">
+      <div class="flex gap-2">
+        <div class="ui-skeleton h-5 w-16 rounded-md"></div>
+        <div class="ui-skeleton h-5 w-14 rounded-md"></div>
+      </div>
+      <div class="ui-skeleton h-3 w-28 rounded-md"></div>
+    </div>`;
+  return el;
 }
 
+function readerSummarySkeletonHTML() {
+  return `<div class="w-full space-y-3 animate-fade-in opacity-0">
+    <div class="ui-skeleton h-4 rounded-md" style="width:88%"></div>
+    <div class="ui-skeleton h-4 rounded-md w-full"></div>
+    <div class="ui-skeleton h-4 rounded-md" style="width:94%"></div>
+    <div class="ui-skeleton h-4 rounded-md" style="width:72%"></div>
+    <div class="ui-skeleton h-4 rounded-md w-full"></div>
+    <div class="ui-skeleton h-4 rounded-md" style="width:56%"></div>
+  </div>`;
+}
+
+// ─── Activity graph ───────────────────────────────────────────────────────────
 function getReadStats() {
   const o = safeJsonParse(localStorage.getItem(LS_READ_STATS) || "{}", {});
   return o && typeof o === "object" && !Array.isArray(o) ? o : {};
@@ -397,18 +295,17 @@ function renderActivityGraph() {
   totalReadsEl.textContent = `${totalReads} Total`;
 
   const today = new Date();
-  const currentDayOfWeek = today.getDay();
   const numWeeks = 20;
-  const totalDays = numWeeks * 7 + (currentDayOfWeek + 1);
+  const totalDays = numWeeks * 7 + (today.getDay() + 1);
 
   const daysArr = [];
   for (let i = totalDays - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(today.getDate() - i);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    daysArr.push(`${year}-${month}-${day}`);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    daysArr.push(`${y}-${m}-${dd}`);
   }
 
   daysArr.forEach((dateStr) => {
@@ -425,35 +322,10 @@ function renderActivityGraph() {
   });
 }
 
+// ─── Read state ───────────────────────────────────────────────────────────────
 function getReadStories() {
   const a = safeJsonParse(localStorage.getItem(LS_READ_STORIES) || "[]", []);
   return Array.isArray(a) ? a : [];
-}
-
-function showNotification(message, type = 'error') {
-  const notification = document.createElement('div');
-  const bgColor = type === 'error' ? 'bg-red-500' : type === 'warning' ? 'bg-amber-500' : 'bg-green-500';
-  
-  notification.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg pointer-events-auto transform transition-all duration-300 translate-y-0 opacity-100 mb-2`;
-  notification.innerHTML = `
-    <div class="flex items-center gap-3">
-      <span class="w-2 h-2 rounded-full bg-white shrink-0"></span>
-      <span class="text-sm font-medium">${message}</span>
-    </div>
-  `;
-  
-  notificationContainer.appendChild(notification);
-  
-  // Auto remove after 4 seconds
-  setTimeout(() => {
-    notification.classList.remove('translate-y-0', 'opacity-100');
-    notification.classList.add('translate-y-2', 'opacity-0');
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, 300);
-  }, 4000);
 }
 
 function markAsRead(id) {
@@ -461,19 +333,19 @@ function markAsRead(id) {
   const n = Number(id);
   if (!read.some((x) => Number(x) === n)) {
     read.push(n);
-    localStorage.setItem(LS_READ_STORIES, JSON.stringify(read));
+    try {
+      localStorage.setItem(LS_READ_STORIES, JSON.stringify(read));
 
-    const stats = getReadStats();
-    const todayDate = new Date();
-    const year = todayDate.getFullYear();
-    const month = String(todayDate.getMonth() + 1).padStart(2, "0");
-    const day = String(todayDate.getDate()).padStart(2, "0");
-    const todayStr = `${year}-${month}-${day}`;
+      const stats = getReadStats();
+      const d = new Date();
+      const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      stats[todayStr] = (stats[todayStr] || 0) + 1;
+      localStorage.setItem(LS_READ_STATS, JSON.stringify(stats));
 
-    stats[todayStr] = (stats[todayStr] || 0) + 1;
-    localStorage.setItem(LS_READ_STATS, JSON.stringify(stats));
-
-    renderActivityGraph();
+      renderActivityGraph();
+    } catch (e) {
+      console.warn("Storage error in markAsRead:", e);
+    }
   }
 }
 
@@ -489,25 +361,20 @@ function applyReadState(story, cardElement) {
   markAsRead(story.id);
 }
 
+// ─── Preferences ──────────────────────────────────────────────────────────────
 const COMMENTS_OPEN_PREF_KEY = "github_trending_digest_comments_open_v1";
 const SOURCE_OPEN_PREF_KEY = "github_trending_digest_source_open_v1";
 
-function getCommentsOpenPreference() {
-  return localStorage.getItem(COMMENTS_OPEN_PREF_KEY) === "1";
-}
-
-function setCommentsOpenPreference(open) {
+const getCommentsOpenPreference = () =>
+  localStorage.getItem(COMMENTS_OPEN_PREF_KEY) === "1";
+const setCommentsOpenPreference = (open) =>
   localStorage.setItem(COMMENTS_OPEN_PREF_KEY, open ? "1" : "0");
-}
-
-function getSourceOpenPreference() {
-  return localStorage.getItem(SOURCE_OPEN_PREF_KEY) === "1";
-}
-
-function setSourceOpenPreference(open) {
+const getSourceOpenPreference = () =>
+  localStorage.getItem(SOURCE_OPEN_PREF_KEY) === "1";
+const setSourceOpenPreference = (open) =>
   localStorage.setItem(SOURCE_OPEN_PREF_KEY, open ? "1" : "0");
-}
 
+// ─── Reader view toggle ───────────────────────────────────────────────────────
 function setReaderViewToggleVisible(show) {
   readerViewToggle.classList.toggle("hidden", !show);
   readerViewToggle.classList.toggle("inline-flex", show);
@@ -528,20 +395,11 @@ function syncReaderViewToggleUi() {
   );
 }
 
-function setSourceExternalHrefs(href) {
-  sourceFramePanel.querySelectorAll("a.js-source-external").forEach((a) => {
-    a.href = href;
-  });
-}
-
+// ─── Source panel ─────────────────────────────────────────────────────────────
 function closeSourcePanel(persistPreference) {
-  sourceEmbedRequestSeq += 1;
   sourceFramePanel.classList.add("hidden");
   sourceFramePanel.setAttribute("hidden", "");
   readerBody.classList.remove("hidden");
-  readerSourceIframe.removeAttribute("src");
-  sourceEmbedChecking.classList.add("hidden");
-  sourceEmbedError.classList.add("hidden");
   readerSourceIframeWrap.classList.remove("hidden");
   if (persistPreference) setSourceOpenPreference(false);
   syncReaderViewToggleUi();
@@ -549,78 +407,60 @@ function closeSourcePanel(persistPreference) {
 
 // Cache for README content to avoid repeated API calls
 const readmeCache = new Map();
-const README_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const README_CACHE_TTL = 30 * 60 * 1000;
 
 function resolveReadmeImages(markdown, fullName, defaultBranch = "main") {
   const base = `https://raw.githubusercontent.com/${fullName}/${defaultBranch}`;
-
-  return (
-    markdown
-      // Markdown syntax: ![alt](./image.png) or ![alt](image.png)
-      .replace(
-        /!\[([^\]]*)\]\((?!https?:\/\/)([^)]+)\)/g,
-        (match, alt, src) => {
-          const cleaned = src.replace(/^\.\//, "");
-          return `![${alt}](${base}/${cleaned})`;
-        },
-      )
-      // HTML syntax: <img src="./image.png"> or <img src="image.png">
-      .replace(
-        /<img([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
-        (match, before, src, after) => {
-          const cleaned = src.replace(/^\.\//, "");
-          return `<img${before} src="${base}/${cleaned}"${after}>`;
-        },
-      )
-      // HTML syntax with single quotes src=''
-      .replace(
-        /<img([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
-        (match, before, src, after) => {
-          const cleaned = src.replace(/^\.\//, "");
-          return `<img${before} src="${base}/${cleaned}"${after}>`;
-        },
-      )
-  );
+  return markdown
+    .replace(
+      /!\[([^\]]*)\]\((?!https?:\/\/)([^)]+)\)/g,
+      (_, alt, src) => `![${alt}](${base}/${src.replace(/^\.\//, "")})`,
+    )
+    .replace(
+      /<img([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+      (_, b, src, a) =>
+        `<img${b} src="${base}/${src.replace(/^\.\//, "")}"${a}>`,
+    )
+    .replace(
+      /<img([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+      (_, b, src, a) =>
+        `<img${b} src="${base}/${src.replace(/^\.\//, "")}"${a}>`,
+    );
 }
 
 async function openSourcePanelForStory(story, persistPreference) {
   if (!story?.id) return;
 
+  // FIX: also remove the HTML `hidden` attribute, not just the class
   sourceFramePanel.classList.remove("hidden");
+  sourceFramePanel.removeAttribute("hidden");
   sourceFramePanel.classList.add("flex");
   sourceFramePanel.scrollTop = 0;
 
-  // Hide iframe, use wrap div instead
-  readerSourceIframe.style.display = "none";
+  // Hide summary content when opening source panel
+  readerBody.classList.add("hidden");
 
-  // Check cache first
   const cacheKey = story.id;
   const cached = readmeCache.get(cacheKey);
   const now = Date.now();
-  
-  if (cached && (now - cached.time) < README_CACHE_TTL) {
-    // Use cached content
+
+  if (cached && now - cached.time < README_CACHE_TTL) {
     renderReadmeContent(cached.data, story);
     if (persistPreference) setSourceOpenPreference(true);
     syncReaderViewToggleUi();
     return;
   }
 
-  // Clear old content and create new div
   let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
   if (!readmeDiv) {
     readmeDiv = document.createElement("div");
     readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText = `
-      height: 100%; overflow-y: auto; padding: 1.5rem;
-      color: #e4e4e7; font-family: 'Geist Sans', sans-serif;
-      line-height: 1.7; font-size: 0.9375rem;
-      background: #0c0c0e;
-    `;
+    readmeDiv.style.cssText =
+      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
+      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
     readerSourceIframeWrap.appendChild(readmeDiv);
   }
 
-  // Show loading
   readmeDiv.innerHTML = `
     <div style="display:flex;align-items:center;gap:0.75rem;padding:2rem;color:#71717a;">
       <svg style="width:1rem;height:1rem;animation:spin 1s linear infinite;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -636,14 +476,8 @@ async function openSourcePanelForStory(story, persistPreference) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    // Cache the result
-    readmeCache.set(cacheKey, {
-      data: data,
-      time: now
-    });
-
+    readmeCache.set(cacheKey, { data, time: now });
     renderReadmeContent(data, story);
-
   } catch (err) {
     console.error("README load failed:", err);
     renderReadmeError(err, story);
@@ -654,17 +488,13 @@ async function openSourcePanelForStory(story, persistPreference) {
 }
 
 function renderReadmeContent(data, story) {
-  // Clear old content and create new div
   let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
   if (!readmeDiv) {
     readmeDiv = document.createElement("div");
     readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText = `
-      height: 100%; overflow-y: auto; padding: 1.5rem;
-      color: #e4e4e7; font-family: 'Geist Sans', sans-serif;
-      line-height: 1.7; font-size: 0.9375rem;
-      background: #0c0c0e;
-    `;
+    readmeDiv.style.cssText =
+      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
+      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
     readerSourceIframeWrap.appendChild(readmeDiv);
   }
 
@@ -680,23 +510,14 @@ function renderReadmeContent(data, story) {
 
   readmeDiv.innerHTML = `
     <style>
-      .readme-render h1,.readme-render h2,.readme-render h3,.readme-render h4 {
-        color:#fff;font-weight:600;margin:1.5rem 0 0.75rem;
-        padding-bottom:0.4rem;border-bottom:1px solid #27272a;
-      }
-      .readme-render h1{font-size:1.4rem;} .readme-render h2{font-size:1.2rem;}
-      .readme-render h3{font-size:1.05rem;} .readme-render h4{font-size:0.95rem;}
+      .readme-render h1,.readme-render h2,.readme-render h3,.readme-render h4{color:#fff;font-weight:600;margin:1.5rem 0 0.75rem;padding-bottom:0.4rem;border-bottom:1px solid #27272a;}
+      .readme-render h1{font-size:1.4rem;} .readme-render h2{font-size:1.2rem;} .readme-render h3{font-size:1.05rem;} .readme-render h4{font-size:0.95rem;}
       .readme-render p{margin:0 0 1rem;color:#d4d4d8;}
-      .readme-render a{color:#60a5fa;text-decoration:underline;}
-      .readme-render a:hover{color:#93c5fd;}
-      .readme-render ul,.readme-render ol{color:#d4d4d8;padding-left:1.5rem;margin:0 0 1rem;}
-      .readme-render li{margin-bottom:0.25rem;}
-      .readme-render blockquote{border-left:3px solid #3f3f46;margin:1rem 0;padding:0.75rem 1rem;
-        background:#18181b;border-radius:0.375rem;color:#a1a1aa;}
-      .readme-render code{font-family:'Geist Mono',monospace;font-size:0.8125rem;
-        background:#27272a;color:#fbbf24;padding:0.1rem 0.35rem;border-radius:0.25rem;}
-      .readme-render pre{background:#18181b;border:1px solid #27272a;border-radius:0.5rem;
-        padding:1rem;overflow-x:auto;margin:1rem 0;}
+      .readme-render a{color:#60a5fa;text-decoration:underline;} .readme-render a:hover{color:#93c5fd;}
+      .readme-render ul,.readme-render ol{color:#d4d4d8;padding-left:1.5rem;margin:0 0 1rem;} .readme-render li{margin-bottom:0.25rem;}
+      .readme-render blockquote{border-left:3px solid #3f3f46;margin:1rem 0;padding:0.75rem 1rem;background:#18181b;border-radius:0.375rem;color:#a1a1aa;}
+      .readme-render code{font-family:'Geist Mono',monospace;font-size:0.8125rem;background:#27272a;color:#fbbf24;padding:0.1rem 0.35rem;border-radius:0.25rem;}
+      .readme-render pre{background:#18181b;border:1px solid #27272a;border-radius:0.5rem;padding:1rem;overflow-x:auto;margin:1rem 0;}
       .readme-render pre code{background:transparent;color:#e4e4e7;padding:0;}
       .readme-render img{max-width:100%;border-radius:0.5rem;border:1px solid #27272a;margin:1rem 0;}
       .readme-render table{border-collapse:collapse;width:100%;margin:1rem 0;}
@@ -705,10 +526,8 @@ function renderReadmeContent(data, story) {
       .readme-render hr{border:none;border-top:1px solid #27272a;margin:1.5rem 0;}
       @keyframes spin{to{transform:rotate(360deg);}}
     </style>
-    <div class="readme-render">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>
-  `;
+    <div class="readme-render">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
 
-  // Open links in new tab
   readmeDiv.querySelectorAll("a[href]").forEach((a) => {
     a.setAttribute("target", "_blank");
     a.setAttribute("rel", "noopener noreferrer");
@@ -720,51 +539,41 @@ function renderReadmeError(err, story) {
   if (!readmeDiv) {
     readmeDiv = document.createElement("div");
     readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText = `
-      height: 100%; overflow-y: auto; padding: 1.5rem;
-      color: #e4e4e7; font-family: 'Geist Sans', sans-serif;
-      line-height: 1.7; font-size: 0.9375rem;
-      background: #0c0c0e;
-    `;
+    readmeDiv.style.cssText =
+      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
+      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
     readerSourceIframeWrap.appendChild(readmeDiv);
   }
-
   readmeDiv.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-      min-height:300px;gap:1rem;text-align:center;color:#71717a;">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:1rem;text-align:center;color:#71717a;">
       <svg style="width:2rem;height:2rem;color:#52525b;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-          d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
       <p style="font-size:0.875rem;">Failed to load README</p>
       <p style="font-size:0.75rem;">${err.message}</p>
       <a href="${story.url}" target="_blank" rel="noopener noreferrer"
-        style="color:#ff8533;font-size:0.8125rem;text-decoration:underline;">
-        View on GitHub ↗
-      </a>
+        style="color:#ff8533;font-size:0.8125rem;text-decoration:underline;">View on GitHub ↗</a>
     </div>`;
 }
 
 function toggleSourcePanelFromUi() {
   if (!currentActiveStory?.id) return;
-  const open = !sourceFramePanel.classList.contains("hidden");
-  if (open) closeSourcePanel(true);
+  if (!sourceFramePanel.classList.contains("hidden")) closeSourcePanel(true);
   else void openSourcePanelForStory(currentActiveStory, true);
 }
 
+// ─── Comments / Issues panel ──────────────────────────────────────────────────
 function syncCommentsButtonUi() {
   const open = !commentsPane.classList.contains("hidden");
-  readerHnBtn.classList.toggle("feed-kind-active", open);
-  readerHnBtn.setAttribute("aria-pressed", open ? "true" : "false");
+  readerIssuesBtn.classList.toggle("feed-kind-active", open);
+  readerIssuesBtn.setAttribute("aria-pressed", open ? "true" : "false");
 }
 
 function openCommentsPanelForStory(story, persistPreference) {
   if (!story) return;
   commentsPane.classList.remove("hidden");
   commentsPane.classList.add("flex");
-  if (window.innerWidth < 768) {
-    commentsBackdrop.classList.remove("hidden");
-  }
+  if (window.innerWidth < 768) commentsBackdrop.classList.remove("hidden");
   commentsExternalLink.href = `${story.url}/issues`;
   loadGitHubIssues(story.id, commentsBody);
   if (persistPreference) setCommentsOpenPreference(true);
@@ -782,6 +591,98 @@ function closeCommentsPanel(persistPreference) {
 closeCommentsBtn.addEventListener("click", () => closeCommentsPanel(true));
 commentsBackdrop.addEventListener("click", () => closeCommentsPanel(true));
 
+// ─── GitHub Issues loader ─────────────────────────────────────────────────────
+async function loadGitHubIssues(repoId, container) {
+  container.innerHTML = `
+    <div class="flex items-center justify-center py-8">
+      <div class="animate-spin h-4 w-4 border-2 border-hn border-t-transparent rounded-full"></div>
+      <span class="ml-2 text-sm text-textMuted">Loading issues...</span>
+    </div>`;
+
+  try {
+    const [owner, repo] = repoId.split("/");
+    if (!owner || !repo) {
+      container.innerHTML =
+        '<p class="text-sm text-textMuted px-2 py-10 text-center">Invalid repository format.</p>';
+      return;
+    }
+
+    const issuesRes = await fetch(`/api/issues?owner=${owner}&repo=${repo}`);
+    if (!issuesRes.ok)
+      throw new Error(`Failed to fetch issues: ${issuesRes.status}`);
+
+    const data = await issuesRes.json();
+    if (data.error) {
+      container.innerHTML = `<p class="text-sm text-textMuted px-2 py-10 text-center">${data.error}</p>`;
+      return;
+    }
+
+    const issues = data.issues || [];
+    if (issues.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-8">
+          <p class="text-sm text-textMuted mb-2">No issues found</p>
+          <a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">View on GitHub ↗</a>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = "";
+    const listRoot = document.createElement("div");
+    listRoot.className = "space-y-4";
+
+    issues.forEach((issue) => {
+      const issueEl = document.createElement("div");
+      issueEl.className =
+        "border border-borderSubtle rounded-lg p-4 hover:bg-surfaceHover transition-colors";
+
+      const labels = (issue.labels || [])
+        .map(
+          (label) =>
+            `<span class="inline-block px-2 py-1 text-xs rounded-full" style="background-color:${label.color}20;color:${label.color}">${label.name}</span>`,
+        )
+        .join(" ");
+
+      issueEl.innerHTML = `
+        <div class="flex items-start justify-between mb-2">
+          <h3 class="font-medium text-sm text-textMain">
+            <a href="${issue.html_url}" target="_blank" class="hover:text-hn transition-colors">${escapeHtml(issue.title)}</a>
+          </h3>
+          <span class="text-xs text-textMuted">#${issue.number}</span>
+        </div>
+        <div class="flex items-center gap-4 text-xs text-textMuted mb-2">
+          <span>👤 ${escapeHtml(issue.user.login)}</span>
+          <span>💬 ${issue.comments}</span>
+          <span>⏰ ${new Date(issue.created_at).toLocaleDateString()}</span>
+          ${
+            issue.state === "open"
+              ? '<span class="text-green-500">🟢 Open</span>'
+              : '<span class="text-red-500">🔴 Closed</span>'
+          }
+        </div>
+        ${labels ? `<div class="flex flex-wrap gap-1">${labels}</div>` : ""}`;
+
+      listRoot.appendChild(issueEl);
+    });
+
+    container.appendChild(listRoot);
+
+    const footerEl = document.createElement("div");
+    footerEl.className = "text-center py-4 border-t border-borderSubtle mt-4";
+    footerEl.innerHTML = `<a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">View all issues on GitHub ↗</a>`;
+    container.appendChild(footerEl);
+  } catch (error) {
+    console.error("Failed to load GitHub issues:", error);
+    container.innerHTML = `
+      <div class="text-center py-8">
+        <p class="text-sm text-textMuted mb-2">Failed to load issues</p>
+        <button onclick="loadGitHubIssues('${repoId}', this.closest('.text-center').parentElement)"
+          class="text-xs text-hn hover:underline">Retry ↻</button>
+      </div>`;
+  }
+}
+
+// ─── Keyboard navigation ──────────────────────────────────────────────────────
 function visibleFeedCards() {
   return Array.from(
     feedList.querySelectorAll(".story-card[id^='card-']"),
@@ -791,27 +692,20 @@ function visibleFeedCards() {
 function keyboardInFormField() {
   const a = document.activeElement;
   if (!a) return false;
-  const tag = a.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (a.isContentEditable) return true;
-  return false;
-}
-
-function shouldArrowNavigateFeed() {
-  if (keyboardInFormField()) return false;
-  const a = document.activeElement;
-  if (readerBody.contains(a)) return false;
-  if (commentsBody.contains(a)) return false;
-  return true;
+  if (
+    a.tagName === "INPUT" ||
+    a.tagName === "TEXTAREA" ||
+    a.tagName === "SELECT"
+  )
+    return true;
+  return a.isContentEditable;
 }
 
 function navigateFeedByArrow(delta) {
   const cards = visibleFeedCards();
   if (!cards.length) return;
   let idx = cards.findIndex((c) => c.id === `card-${activeCardId}`);
-  if (idx === -1) {
-    idx = delta > 0 ? -1 : cards.length;
-  }
+  if (idx === -1) idx = delta > 0 ? -1 : cards.length;
   const next = Math.max(0, Math.min(cards.length - 1, idx + delta));
   if (next === idx) return;
   const card = cards[next];
@@ -821,28 +715,24 @@ function navigateFeedByArrow(delta) {
 
 function toggleCommentsKeyboard() {
   if (!currentActiveStory) return;
-  const open = !commentsPane.classList.contains("hidden");
-  if (open) closeCommentsPanel(true);
+  if (!commentsPane.classList.contains("hidden")) closeCommentsPanel(true);
   else openCommentsPanelForStory(currentActiveStory, true);
 }
 
 function openCurrentStoryInNewTab() {
   if (!currentActiveStory?.url) return;
-  let href = "";
   try {
     const u = new URL(currentActiveStory.url);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return;
-    href = u.href;
+    if (u.protocol === "http:" || u.protocol === "https:") {
+      window.open(u.href, "_blank", "noopener,noreferrer");
+    }
   } catch {
-    return;
+    /* ignore */
   }
-  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 document.addEventListener("keydown", (e) => {
-  if (settingsModal.open) return;
-
-  if (keyboardInFormField()) return;
+  if (settingsModal.open || keyboardInFormField()) return;
 
   if (e.key === "Escape") {
     if (!commentsPane.classList.contains("hidden")) {
@@ -857,15 +747,21 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && shouldArrowNavigateFeed()) {
+  if (
+    (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey
+  ) {
+    if (
+      !readerBody.contains(document.activeElement) &&
+      !commentsBody.contains(document.activeElement)
+    ) {
       e.preventDefault();
       navigateFeedByArrow(e.key === "ArrowDown" ? 1 : -1);
     }
     return;
   }
-
   if (
     (e.key === "c" || e.key === "C") &&
     !e.ctrlKey &&
@@ -876,7 +772,6 @@ document.addEventListener("keydown", (e) => {
     toggleCommentsKeyboard();
     return;
   }
-
   if (
     (e.key === "s" || e.key === "S") &&
     !e.ctrlKey &&
@@ -888,7 +783,6 @@ document.addEventListener("keydown", (e) => {
     toggleSourcePanelFromUi();
     return;
   }
-
   if (
     (e.key === "o" || e.key === "O") &&
     !e.ctrlKey &&
@@ -901,11 +795,11 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ─── View toggle buttons ──────────────────────────────────────────────────────
 readerViewSummaryBtn.addEventListener("click", async () => {
   if (!currentActiveStory?.url) return;
   if (!sourceFramePanel.classList.contains("hidden")) {
     closeSourcePanel(true);
-    // Load summary when switching from README to Summary
     await loadSummaryForStory(currentActiveStory);
   }
 });
@@ -913,79 +807,149 @@ readerViewSummaryBtn.addEventListener("click", async () => {
 readerViewSourceBtn.addEventListener("click", () => {
   if (!currentActiveStory?.url) return;
   if (sourceFramePanel.classList.contains("hidden")) {
-    // Hide summary content when showing README
-    readerBody.classList.add("hidden");
     void openSourcePanelForStory(currentActiveStory, true);
   }
 });
 
-readerHnBtn.addEventListener("click", () => {
+readerIssuesBtn.addEventListener("click", () => {
   if (!currentActiveStory) return;
   toggleCommentsKeyboard();
 });
 
-const HN_ITEM_CACHE_KEY = "github_trending_digest_hn_items_v1";
-const HN_ITEM_CACHE_MAX = 1000;
-const HN_ITEM_CACHE_TTL_MS = 45 * 60 * 1000;
+// ─── Mobile back ──────────────────────────────────────────────────────────────
+mobileBackBtn.addEventListener("click", () => {
+  closeCommentsPanel(false);
+  feedPane.classList.remove("hidden");
+  readerPane.classList.add("hidden");
+  readerPane.classList.remove("flex");
+});
 
-function hnItemCacheLoad() {
-  try {
-    const raw = localStorage.getItem(HN_ITEM_CACHE_KEY);
-    if (!raw) return { items: {}, order: [] };
-    const o = JSON.parse(raw);
-    if (!o || typeof o.items !== "object" || !Array.isArray(o.order)) {
-      return { items: {}, order: [] };
-    }
-    return o;
-  } catch {
-    return { items: {}, order: [] };
+// ─── Load more ────────────────────────────────────────────────────────────────
+loadMoreBtn.addEventListener("click", () => {
+  currentPage++;
+  loadStoriesClient(currentPage);
+});
+
+// ─── Stories loader (FIXED: pagination now actually fetches for all pages) ────
+async function loadStoriesClient(page = 1) {
+  loadMoreBtn.disabled = true;
+  loadMoreBtn.innerHTML = `${SPINNER_SVG}<span>Loading…</span>`;
+
+  if (page === 1) {
+    feedList.innerHTML = "";
+  } else {
+    for (let i = 0; i < 3; i++) feedList.appendChild(createFeedSkeletonCard());
   }
-}
 
-function hnItemCacheSave(cache) {
   try {
-    localStorage.setItem(HN_ITEM_CACHE_KEY, JSON.stringify(cache));
+    const res = await fetch(`/api/stories?period=${feedKind}&page=${page}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    feedList
+      .querySelectorAll("[data-feed-skeleton]")
+      .forEach((el) => el.remove());
+    renderStoriesFromIds(data.stories || []);
+
+    if (data.hasMore) {
+      loadMoreBtn.classList.remove("hidden");
+      loadMoreBtn.textContent = "Load More";
+      loadMoreBtn.disabled = false;
+    } else {
+      loadMoreBtn.classList.add("hidden");
+    }
+
+    if (page === 1) {
+      statusDot.classList.remove("animate-pulse");
+      statusTextEl.textContent = "Live";
+    }
   } catch (e) {
-    const half = Math.floor(cache.order.length / 2);
-    for (let i = 0; i < half; i++) {
-      const v = cache.order.shift();
-      if (v) delete cache.items[v];
-    }
-    try {
-      localStorage.setItem(HN_ITEM_CACHE_KEY, JSON.stringify(cache));
-    } catch {
-      /* ignore */
+    console.error("Load stories error:", e);
+    feedList
+      .querySelectorAll("[data-feed-skeleton]")
+      .forEach((el) => el.remove());
+    if (page === 1) {
+      feedList.innerHTML = `
+        <div class="col-span-full text-center py-8 text-textMuted">
+          <p class="mb-2">Failed to load repositories</p>
+          <button type="button" onclick="location.reload()"
+            class="px-4 py-2 bg-hn text-white rounded-lg hover:bg-hn/90 transition-colors">Retry</button>
+        </div>`;
+    } else {
+      loadMoreBtn.textContent = "Failed to load";
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.classList.remove("hidden");
     }
   }
 }
 
-function hnItemCacheGet(id) {
-  const sid = String(id);
-  const cache = hnItemCacheLoad();
-  const entry = cache.items[sid];
-  if (!entry) return null;
-  if (Date.now() - entry.t > HN_ITEM_CACHE_TTL_MS) {
-    delete cache.items[sid];
-    cache.order = cache.order.filter((x) => x !== sid);
-    hnItemCacheSave(cache);
-    return null;
-  }
-  return entry.data;
+// Extracted from loadStoriesClient so pagination can call it correctly
+function renderStoriesFromIds(stories) {
+  const frag = document.createDocumentFragment();
+  stories.forEach((story, i) => {
+    const card = document.createElement("div");
+    card.style.animationDelay = `${i * 20}ms`;
+    card.id = `card-${story.id}`;
+
+    const readClass = isRead(story.id) ? "is-read" : "";
+    const activeClass = activeCardId === story.id ? "is-active" : "";
+    card.className = `story-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
+
+    let scoreColor = "text-textMuted";
+    if (story.score > 500) scoreColor = "text-hn";
+    else if (story.score > 100) scoreColor = "text-amber-500";
+
+    const titleSafe = escapeHtml(story.title);
+
+    card.innerHTML = `
+      <div class="flex justify-between items-start mb-3">
+        <h3 class="font-medium text-[14px] leading-snug text-textMain group-hover:text-white transition-colors pr-2">${titleSafe}</h3>
+        <div class="check-icon ${activeCardId === story.id ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+        </div>
+      </div>
+      <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(story.description || "")}</div>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3 text-xs">
+          <div class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            <span class="${scoreColor}">${story.score}</span>
+          </div>
+          ${
+            story.language
+              ? `
+          <div class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+            </svg>
+            <span class="font-mono">${escapeHtml(story.language)}</span>
+          </div>`
+              : ""
+          }
+          <div class="flex items-center gap-1.5 text-textMuted/70">
+            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+            </svg>
+            <span class="font-mono">${story.forks ?? 0}</span>
+          </div>
+        </div>
+        <span class="text-xs text-textMuted font-mono">github.com</span>
+      </div>`;
+
+    card.addEventListener("click", () => handleCardClick(story, card));
+    frag.appendChild(card);
+  });
+  feedList.appendChild(frag);
 }
 
-function hnItemCacheSet(id, data) {
-  const sid = String(id);
-  const cache = hnItemCacheLoad();
-  const existed = !!cache.items[sid];
-  cache.items[sid] = { t: Date.now(), data };
-  if (!existed) {
-    cache.order.push(sid);
-    while (cache.order.length > HN_ITEM_CACHE_MAX) {
-      const victim = cache.order.shift();
-      if (victim) delete cache.items[victim];
-    }
-  }
-  hnItemCacheSave(cache);
+// ─── Summary helpers ──────────────────────────────────────────────────────────
+function summaryStatusLangSuffix() {
+  return currentLang === "en" ? "" : ` (${currentLang.toUpperCase()})`;
 }
 
 function applyBlankTargets(root) {
@@ -998,371 +962,7 @@ function applyBlankTargets(root) {
   });
 }
 
-async function fetchHnItem(id) {
-  const cached = hnItemCacheGet(id);
-  if (cached !== null) return cached;
-  const res = await fetch(
-    `https://hacker-news.firebaseio.com/v0/item/${id}.json`,
-  );
-  const data = await res.json();
-  hnItemCacheSet(id, data);
-  return data;
-}
-
-function hnCommentBlock(item, depth) {
-  const block = document.createElement("div");
-  block.className = "hn-comment-block";
-  block.dataset.depth = String(depth);
-  block.dataset.rail = String(depth % 5);
-
-  const article = document.createElement("article");
-  article.className = "hn-comment-card";
-
-  const rail = document.createElement("div");
-  rail.className = "hn-comment-rail";
-  rail.setAttribute("aria-hidden", "true");
-
-  const inner = document.createElement("div");
-  inner.className = "hn-comment-inner";
-
-  const meta = document.createElement("header");
-  meta.className = "hn-comment-meta w-full";
-
-  const author = document.createElement("span");
-  author.className = "hn-comment-author";
-  author.textContent = item.by || "[deleted]";
-  meta.appendChild(author);
-
-  if (item.time) {
-    const when = document.createElement("span");
-    when.className = "hn-comment-time";
-    when.textContent = timeAgo(item.time);
-    meta.appendChild(when);
-  }
-
-  if (depth > 0) {
-    const depthBadge = document.createElement("span");
-    depthBadge.className = "hn-comment-depth shrink-0 ml-auto";
-    depthBadge.textContent = `L${depth}`;
-    depthBadge.title = `Reply depth ${depth}`;
-    meta.appendChild(depthBadge);
-  }
-
-  const body = document.createElement("div");
-  body.className = "hn-comment-body";
-  body.innerHTML = hnCommentHtmlSafe(item.text || "");
-  applyBlankTargets(body);
-
-  inner.appendChild(meta);
-  inner.appendChild(body);
-  article.appendChild(rail);
-  article.appendChild(inner);
-  block.appendChild(article);
-
-  let replies = null;
-  if (item.kids && item.kids.length > 0) {
-    replies = document.createElement("div");
-    replies.className = "hn-replies";
-    if (depth === 0) replies.classList.add("hn-replies--root");
-    block.appendChild(replies);
-  }
-
-  return { block, replies };
-}
-
-async function loadGitHubIssues(repoId, container) {
-  container.innerHTML = `
-          <div class="flex items-center justify-center py-8">
-            <div class="animate-spin h-4 w-4 border-2 border-hn border-t-transparent rounded-full"></div>
-            <span class="ml-2 text-sm text-textMuted">Loading issues...</span>
-          </div>
-        `;
-
-  try {
-    // Parse repoId from "owner/repo" format
-    const [owner, repo] = repoId.split("/");
-    if (!owner || !repo) {
-      container.innerHTML =
-        '<p class="text-sm text-textMuted px-2 py-10 text-center">Invalid repository format.</p>';
-      return;
-    }
-
-    // Fetch GitHub issues
-    const issuesRes = await fetch(`/api/issues?owner=${owner}&repo=${repo}`);
-    if (!issuesRes.ok) {
-      throw new Error(`Failed to fetch issues: ${issuesRes.status}`);
-    }
-
-    const data = await issuesRes.json();
-
-    if (data.error) {
-      container.innerHTML = `<p class="text-sm text-textMuted px-2 py-10 text-center">${data.error}</p>`;
-      return;
-    }
-
-    const issues = data.issues || [];
-
-    if (issues.length === 0) {
-      container.innerHTML = `
-              <div class="text-center py-8">
-                <p class="text-sm text-textMuted mb-2">No issues found</p>
-                <a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">
-                  View on GitHub ↗
-                </a>
-              </div>
-            `;
-      return;
-    }
-    // Render issues
-    container.innerHTML = "";
-    const listRoot = document.createElement("div");
-    listRoot.className = "space-y-4";
-
-    issues.forEach((issue) => {
-      const issueEl = document.createElement("div");
-      issueEl.className =
-        "border border-borderSubtle rounded-lg p-4 hover:bg-surfaceHover transition-colors";
-
-      const labels = issue.labels
-        ? issue.labels
-            .map(
-              (label) =>
-                `<span class="inline-block px-2 py-1 text-xs rounded-full" style="background-color: ${label.color}20; color: ${label.color}">${label.name}</span>`,
-            )
-            .join(" ")
-        : "";
-
-      issueEl.innerHTML = `
-              <div class="flex items-start justify-between mb-2">
-                <h3 class="font-medium text-sm text-textMain">
-                  <a href="${issue.html_url}" target="_blank" class="hover:text-hn transition-colors">
-                    ${issue.title}
-                  </a>
-                </h3>
-                <span class="text-xs text-textMuted">#${issue.number}</span>
-              </div>
-              <div class="flex items-center gap-4 text-xs text-textMuted mb-2">
-                <span>👤 ${issue.user.login}</span>
-                <span>💬 ${issue.comments}</span>
-                <span>⏰ ${new Date(issue.created_at).toLocaleDateString()}</span>
-                ${issue.state === "open" ? '<span class="text-green-500">🟢 Open</span>' : '<span class="text-red-500">🔴 Closed</span>'}
-              </div>
-              ${labels ? `<div class="flex flex-wrap gap-1">${labels}</div>` : ""}
-            `;
-
-      listRoot.appendChild(issueEl);
-    });
-
-    container.appendChild(listRoot);
-
-    // Add footer link
-    const footerEl = document.createElement("div");
-    footerEl.className = "text-center py-4 border-t border-borderSubtle mt-4";
-    footerEl.innerHTML = `
-            <a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">
-              View all issues on GitHub ↗
-            </a>
-          `;
-    container.appendChild(footerEl);
-  } catch (error) {
-    console.error("Failed to load GitHub issues:", error);
-    container.innerHTML = `
-            <div class="text-center py-8">
-              <p class="text-sm text-textMuted mb-2">Failed to load issues</p>
-              <button onclick="loadGitHubIssues('${repoId}', this.parentElement)" class="text-xs text-hn hover:underline">
-                Retry ↻
-              </button>
-            </div>
-          `;
-  }
-}
-
-// GitHub Issues functionality implemented above
-
-mobileBackBtn.addEventListener("click", () => {
-  closeCommentsPanel(false);
-  feedPane.classList.remove("hidden");
-  readerPane.classList.add("hidden");
-  readerPane.classList.remove("flex");
-});
-
-loadMoreBtn.addEventListener("click", () => {
-  currentPage++;
-  loadStoriesClient(currentPage);
-});
-
-async function loadStoriesClient(page = 1) {
-  let loadMoreEnabled = false;
-  let loadMoreLabel = "Load More";
-
-  loadMoreBtn.disabled = true;
-  loadMoreBtn.innerHTML = `${SPINNER_SVG}<span>Loading…</span>`;
-
-  if (page > 1) {
-    for (let i = 0; i < 3; i++) {
-      feedList.appendChild(createFeedSkeletonCard());
-    }
-  } else {
-    feedList
-      .querySelectorAll("[data-feed-skeleton]")
-      .forEach((el) => el.remove());
-
-    if (page === 1) {
-      feedList.innerHTML = "";
-      loadMoreBtn.classList.remove("hidden");
-      loadMoreBtn.textContent = loadMoreLabel;
-      loadMoreBtn.disabled = false;
-    } else {
-      loadMoreBtn.textContent = loadMoreLabel;
-      loadMoreBtn.disabled = false;
-    }
-
-    try {
-      const apiUrl = `/api/stories?period=${feedKind}&page=${page}`;
-      const res = await fetch(apiUrl);
-      const data = await res.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      if (page === 1) {
-        feedList.innerHTML = "";
-      }
-
-      renderStoriesFromIds(data.stories || []);
-      loadMoreEnabled = data.hasMore;
-    } catch (e) {
-      console.error("Load stories error:", e);
-      if (page === 1) {
-        feedList.innerHTML = `
-                <div class="col-span-full text-center py-8 text-textMuted">
-                  <p class="mb-2">Failed to load repositories</p>
-                  <button
-                    type="button"
-                    onclick="location.reload()"
-                    class="px-4 py-2 bg-hn text-white rounded-lg hover:bg-hn/90 transition-colors"
-                  >
-                    Retry
-                  </button>
-                </div>
-              `;
-      } else {
-        loadMoreBtn.textContent = "Failed to load";
-        loadMoreBtn.disabled = true;
-      }
-    }
-
-    if (loadMoreEnabled) {
-      loadMoreBtn.classList.remove("hidden");
-    } else {
-      loadMoreBtn.classList.add("hidden");
-    }
-  }
-
-  function renderStoriesFromIds(stories) {
-    const frag = document.createDocumentFragment();
-    stories.forEach((story, i) => {
-      const card = document.createElement("div");
-      card.style.animationDelay = `${i * 20}ms`;
-      card.id = `card-${story.id}`;
-
-      const readClass = isRead(story.id) ? "is-read" : "";
-      const activeClass = activeCardId === story.id ? "is-active" : "";
-
-      card.className = `story-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
-
-      let domain = "github.com";
-      if (story.url) {
-        try {
-          domain = new URL(story.url).hostname;
-        } catch {
-          domain = "github.com";
-        }
-      }
-      const relativeTime = timeAgo(story.time);
-
-      let scoreColor = "text-textMuted";
-      let scoreBg = "bg-appBg";
-      let scoreBorder = "border-borderSubtle";
-      if (story.score > 500) {
-        scoreColor = "text-hn";
-        scoreBg = "bg-hn/10";
-        scoreBorder = "border-hn/20";
-      } else if (story.score > 100) {
-        scoreColor = "text-amber-500";
-        scoreBg = "bg-amber-500/10";
-        scoreBorder = "border-amber-500/20";
-      }
-
-      const titleSafe = escapeHtml(story.title);
-
-      card.innerHTML = `
-                        <div class="flex justify-between items-start mb-3">
-                            <h3 class="font-medium text-[14px] leading-snug text-textMain group-hover:text-white transition-colors pr-2">${titleSafe}</h3>
-                            <div class="check-icon ${
-                              activeCardId === story.id
-                                ? "opacity-100"
-                                : "opacity-0"
-                            } group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
-                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                            </div>
-                        </div>
-                        <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(story.description || "")}</div>
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-3 text-xs">
-                                <div class="flex items-center gap-1.5">
-                                    <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                                    </svg>
-                                    <span class="${scoreColor}">${story.score}</span>
-                                </div>
-                                ${
-                                  story.language
-                                    ? `
-                                <div class="flex items-center gap-1.5">
-                                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-                                    </svg>
-                                    <span class="font-mono">${story.language}</span>
-                                </div>
-                                `
-                                    : ""
-                                }
-                                <div class="flex items-center gap-1.5">
-                                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                                    </svg>
-                                    <span class="font-mono">${domain}</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 text-xs text-textMuted">
-                                <span>${relativeTime}</span>
-                            </div>
-                        </div>
-                    `;
-
-      card.addEventListener("click", () => handleCardClick(story, card));
-      frag.appendChild(card);
-    });
-    feedList.appendChild(frag);
-
-    loadMoreEnabled = true;
-    loadMoreLabel = "Load More";
-
-    if (page === 1) {
-      statusDot.classList.remove("animate-pulse");
-      statusTextEl.textContent = "Live";
-    }
-  }
-}
-
-function summaryStatusLangSuffix() {
-  return currentLang === "en" ? "" : ` (${currentLang.toUpperCase()})`;
-}
-
+// ─── Card click / reader ──────────────────────────────────────────────────────
 async function handleCardClick(story, cardElement) {
   if (activeCardId) {
     const oldCard = document.getElementById(`card-${activeCardId}`);
@@ -1370,7 +970,6 @@ async function handleCardClick(story, cardElement) {
   }
   activeCardId = story.id;
   currentActiveStory = story;
-
   cardElement.classList.add("is-active");
 
   if (window.innerWidth < 768) {
@@ -1405,7 +1004,6 @@ async function handleCardClick(story, cardElement) {
       const u = new URL(story.url);
       if (u.protocol === "http:" || u.protocol === "https:") {
         sourceHrefForStory = u.href;
-        setSourceExternalHrefs(u.href);
         sourceUrlOk = true;
       }
     } catch {
@@ -1417,32 +1015,41 @@ async function handleCardClick(story, cardElement) {
     readerTitleSourceLink.href = sourceHrefForStory;
     readerTitleSourceLink.textContent = sourceHrefForStory;
     readerTitleSourceLink.classList.remove("hidden");
-  } else {
-    readerTitleSourceLink.removeAttribute("href");
-    readerTitleSourceLink.textContent = "";
-    readerTitleSourceLink.classList.add("hidden");
-  }
-
-  if (sourceUrlOk) {
     setReaderViewToggleVisible(true);
     if (getSourceOpenPreference()) {
       await openSourcePanelForStory(story, false);
     } else {
       syncReaderViewToggleUi();
     }
+  } else {
+    readerTitleSourceLink.removeAttribute("href");
+    readerTitleSourceLink.textContent = "";
+    readerTitleSourceLink.classList.add("hidden");
   }
 
-  // Show GitHub Issues section
+  // Show Issues toggle button (only load when panel is actually opened)
   readerCommentsToggleWrap.classList.remove("hidden");
   commentsExternalLink.href = `${story.url}/issues`;
-  loadGitHubIssues(story.id, commentsBody);
 
   readerContent.scrollTop = 0;
 
-  // Load summary
-  await loadSummaryForStory(story);
+  // Load content based on user preference
+  if (getSourceOpenPreference()) {
+    // User prefers source, but summary is loaded by default
+    // So we need to switch to source after loading summary
+    await loadSummaryForStory(story);
+    // Then switch to source panel
+    if (!sourceFramePanel.classList.contains("hidden")) {
+      closeSourcePanel(false);
+    }
+    await openSourcePanelForStory(story, false);
+  } else {
+    // User prefers summary, load it
+    await loadSummaryForStory(story);
+  }
 }
 
+// ─── Summary loader ───────────────────────────────────────────────────────────
 async function loadSummaryForStory(story) {
   const localCacheKey = `summary_${story.id}_${currentLang}`;
   const browserCachedSummary = localStorage.getItem(localCacheKey);
@@ -1454,6 +1061,11 @@ async function loadSummaryForStory(story) {
     readerBody.classList.remove("hidden");
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
+    
+    // Mark as read when loading from cache too
+    const activeCard = document.getElementById(`card-${story.id}`);
+    if (activeCard) applyReadState(story, activeCard);
+    
     return;
   }
 
@@ -1463,17 +1075,16 @@ async function loadSummaryForStory(story) {
   readerStatus.innerHTML = `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating summary</span></span>`;
 
   try {
-    const apiKey = (localStorage.getItem(LS_OPENAI_KEY) || "").trim();
+    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
     const headers = {};
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const res = await fetch(
-      `/api/summarize?id=${encodeURIComponent(
-        story.id,
-      )}&lang=${encodeURIComponent(currentLang)}`,
+      `/api/summarize?id=${encodeURIComponent(story.id)}&lang=${encodeURIComponent(currentLang)}`,
       { headers },
     );
     const data = await res.json().catch(() => ({}));
+
     if (res.status === 401) {
       openSettingsBtn.click();
       readerBody.classList.remove("opacity-50");
@@ -1486,14 +1097,12 @@ async function loadSummaryForStory(story) {
           </div>
           <h3 class="text-lg font-medium text-textMain mb-2">API Key Required</h3>
           <p class="text-textMuted text-sm max-w-md">Please add your OpenAI, Groq, or Gemini API key in settings to generate repository summaries.</p>
-        </div>
-      `;
+        </div>`;
       readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Add API key in settings</span></span>`;
       return;
     }
-    if (!res.ok) {
-      throw new Error(data.error || "Summary request failed");
-    }
+    if (!res.ok) throw new Error(data.error || "Summary request failed");
+
     const summary = data.summary;
     if (!summary) throw new Error("Empty summary");
 
@@ -1510,15 +1119,12 @@ async function loadSummaryForStory(story) {
 
     try {
       localStorage.setItem(localCacheKey, summary);
-    } catch (e) {
-      console.warn("Local storage full, skipping browser cache.");
+    } catch {
+      /* storage full */
     }
 
-    // Apply read state to the active card
     const activeCard = document.getElementById(`card-${story.id}`);
-    if (activeCard) {
-      applyReadState(story, activeCard);
-    }
+    if (activeCard) applyReadState(story, activeCard);
   } catch (err) {
     console.error(err);
     readerBody.classList.remove("opacity-50");
@@ -1531,11 +1137,11 @@ async function loadSummaryForStory(story) {
         </div>
         <h3 class="text-lg font-medium text-textMain mb-2">Summary Failed</h3>
         <p class="text-textMuted text-sm max-w-md">Failed to generate summary. Please check your API key and try again.</p>
-      </div>
-    `;
+      </div>`;
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Summary failed — check API key</span></span>`;
   }
 }
 
+// ─── Init ─────────────────────────────────────────────────────────────────────
 renderActivityGraph();
 loadStoriesClient();
