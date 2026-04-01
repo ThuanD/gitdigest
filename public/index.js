@@ -330,9 +330,8 @@ function getReadStories() {
 
 function markAsRead(id) {
   const read = getReadStories();
-  const n = Number(id);
-  if (!read.some((x) => Number(x) === n)) {
-    read.push(n);
+  if (!read.some((x) => x === id)) {
+    read.push(id);
     try {
       localStorage.setItem(LS_READ_STORIES, JSON.stringify(read));
 
@@ -350,8 +349,7 @@ function markAsRead(id) {
 }
 
 function isRead(id) {
-  const n = Number(id);
-  return getReadStories().some((x) => Number(x) === n);
+  return getReadStories().some((x) => x === id);
 }
 
 function applyReadState(story, cardElement) {
