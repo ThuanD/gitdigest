@@ -127,6 +127,7 @@ const openSettingsBtn = document.getElementById("openSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const saveKeyBtn = document.getElementById("saveKeyBtn");
 const clearKeyBtn = document.getElementById("clearKeyBtn");
+const notificationContainer = document.getElementById("notificationContainer");
 const apiKeyInput = document.getElementById("apiKeyInput");
 
 openSettingsBtn.addEventListener("click", () => {
@@ -277,7 +278,6 @@ function resetReaderForFeedSwitch() {
 
 function setFeedKind(kind) {
   if (kind === feedKind) return;
-  console.log("Setting feed kind from", feedKind, "to", kind);
   feedKind = kind;
   localStorage.setItem(LS_FEED_KIND, feedKind);
   resetReaderForFeedSwitch();
@@ -428,6 +428,32 @@ function renderActivityGraph() {
 function getReadStories() {
   const a = safeJsonParse(localStorage.getItem(LS_READ_STORIES) || "[]", []);
   return Array.isArray(a) ? a : [];
+}
+
+function showNotification(message, type = 'error') {
+  const notification = document.createElement('div');
+  const bgColor = type === 'error' ? 'bg-red-500' : type === 'warning' ? 'bg-amber-500' : 'bg-green-500';
+  
+  notification.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg pointer-events-auto transform transition-all duration-300 translate-y-0 opacity-100 mb-2`;
+  notification.innerHTML = `
+    <div class="flex items-center gap-3">
+      <span class="w-2 h-2 rounded-full bg-white shrink-0"></span>
+      <span class="text-sm font-medium">${message}</span>
+    </div>
+  `;
+  
+  notificationContainer.appendChild(notification);
+  
+  // Auto remove after 4 seconds
+  setTimeout(() => {
+    notification.classList.remove('translate-y-0', 'opacity-100');
+    notification.classList.add('translate-y-2', 'opacity-0');
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 4000);
 }
 
 function markAsRead(id) {
@@ -875,10 +901,12 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-readerViewSummaryBtn.addEventListener("click", () => {
+readerViewSummaryBtn.addEventListener("click", async () => {
   if (!currentActiveStory?.url) return;
   if (!sourceFramePanel.classList.contains("hidden")) {
     closeSourcePanel(true);
+    // Load summary when switching from README to Summary
+    await loadSummaryForStory(currentActiveStory);
   }
 });
 
@@ -918,7 +946,6 @@ function hnItemCacheSave(cache) {
   try {
     localStorage.setItem(HN_ITEM_CACHE_KEY, JSON.stringify(cache));
   } catch (e) {
-    console.warn("HN item cache: storage full, trimming", e);
     const half = Math.floor(cache.order.length / 2);
     for (let i = 0; i < half; i++) {
       const v = cache.order.shift();
@@ -1412,6 +1439,11 @@ async function handleCardClick(story, cardElement) {
 
   readerContent.scrollTop = 0;
 
+  // Load summary
+  await loadSummaryForStory(story);
+}
+
+async function loadSummaryForStory(story) {
   const localCacheKey = `summary_${story.id}_${currentLang}`;
   const browserCachedSummary = localStorage.getItem(localCacheKey);
 
@@ -1419,12 +1451,13 @@ async function handleCardClick(story, cardElement) {
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Loaded from cache${summaryStatusLangSuffix()}</span></span>`;
     readerBody.innerHTML = markdownToSafeHtml(browserCachedSummary);
     applyBlankTargets(readerBody);
+    readerBody.classList.remove("hidden");
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
-    applyReadState(story, cardElement);
     return;
   }
 
+  readerBody.classList.remove("hidden");
   readerBody.classList.add("opacity-50");
   readerBody.innerHTML = readerSummarySkeletonHTML();
   readerStatus.innerHTML = `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating summary</span></span>`;
@@ -1444,7 +1477,17 @@ async function handleCardClick(story, cardElement) {
     if (res.status === 401) {
       openSettingsBtn.click();
       readerBody.classList.remove("opacity-50");
-      readerBody.innerHTML = "";
+      readerBody.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 text-center">
+          <div class="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-9h6m-6 0h-6m2 6V7a2 2 0 012-2h6a2 2 0 012 2v5m-2 8h.01M9 16h.01"></path>
+            </svg>
+          </div>
+          <h3 class="text-lg font-medium text-textMain mb-2">API Key Required</h3>
+          <p class="text-textMuted text-sm max-w-md">Please add your OpenAI, Groq, or Gemini API key in settings to generate repository summaries.</p>
+        </div>
+      `;
       readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Add API key in settings</span></span>`;
       return;
     }
@@ -1471,11 +1514,25 @@ async function handleCardClick(story, cardElement) {
       console.warn("Local storage full, skipping browser cache.");
     }
 
-    applyReadState(story, cardElement);
+    // Apply read state to the active card
+    const activeCard = document.getElementById(`card-${story.id}`);
+    if (activeCard) {
+      applyReadState(story, activeCard);
+    }
   } catch (err) {
     console.error(err);
     readerBody.classList.remove("opacity-50");
-    readerBody.innerHTML = "";
+    readerBody.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 text-center">
+        <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+          <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-textMain mb-2">Summary Failed</h3>
+        <p class="text-textMuted text-sm max-w-md">Failed to generate summary. Please check your API key and try again.</p>
+      </div>
+    `;
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Summary failed — check API key</span></span>`;
   }
 }

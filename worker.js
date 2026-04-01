@@ -547,7 +547,7 @@ Output requirements:
         "Missing OpenAI API key. Add your key in settings or set OPENAI_API_KEY as a Worker secret.";
     } else {
       // Gemini API (different format)
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
       requestBody = {
         contents: [
           {
@@ -631,17 +631,25 @@ async function handleRepoDetails(url) {
         headers: {
           Accept: "application/vnd.github.v3+json",
           "User-Agent": "Github-Trending-Digest-Worker",
+          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
         },
       }),
       fetch(`${repoUrl}/readme`, {
         headers: {
           Accept: "application/vnd.github.v3+json",
           "User-Agent": "Github-Trending-Digest-Worker",
+          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
         },
       }).catch(() => null),
     ]);
 
     if (!repoRes.ok) {
+      if (repoRes.status === 403) {
+        const errorData = await repoRes.json().catch(() => ({}));
+        if (errorData.message?.includes('rate limit')) {
+          return json({ error: "GitHub API rate limit exceeded. Please try again later." }, 429);
+        }
+      }
       throw new Error(`GitHub API error: ${repoRes.status}`);
     }
 

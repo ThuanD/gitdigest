@@ -158,13 +158,6 @@
           class="flex items-center justify-center gap-2 pt-2 mt-2 border-t border-borderSubtle"
           aria-label="Project links"
         >
-          <a
-            href="https://x.com/aykutkardas"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-[10px] font-mono text-textMuted/60 hover:text-textMuted/70 transition-colors"
-            >X</a
-          >
           <span
             class="text-textMuted/40 text-[20px] leading-none select-none"
             aria-hidden="true"
@@ -231,7 +224,7 @@
           class="flex items-center justify-between mt-3 py-2 border-t border-borderSubtle"
         >
           <span class="text-xs text-textMuted font-medium"
-            >Hide read posts</span
+            >Hide read repositories</span
           >
           <button
             id="hideReadToggle"
@@ -553,7 +546,7 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-[11px] font-mono text-textMuted hover:text-hn uppercase tracking-wider"
-                  >HN ↗</a
+                  >Github ↗</a
                 >
                 <button
                   id="closeCommentsBtn"
@@ -620,6 +613,10 @@
         </button>
       </div>
     </dialog>
+    
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"></div>
+    
     <script src="/index.js"></script>
   </body>
 </html>
