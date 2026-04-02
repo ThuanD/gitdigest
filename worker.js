@@ -263,7 +263,7 @@ async function fetchGitHubRepo(repoId, env) {
     const response = await fetch(repoUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Trending-Digest-Worker",
+        "User-Agent": "Github-Digest-Worker",
         ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
       },
     });
@@ -307,7 +307,7 @@ async function fetchGitHubIssues(repoId, env) {
     const response = await fetch(issuesUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Trending-Digest-Worker",
+        "User-Agent": "Github-Digest-Worker",
         ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
       },
     });
@@ -422,7 +422,7 @@ async function renderGitHubMarkdown(content, fullName, env) {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Trending-Digest-Worker",
+        "User-Agent": "GitDigest-Worker",
         ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
       },
       body: JSON.stringify({
@@ -454,7 +454,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
       {
         headers: {
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Github-Trending-Digest-Worker",
+          "User-Agent": "GitDigest-Worker",
           ...(env.GITHUB_TOKEN && {
             Authorization: `token ${env.GITHUB_TOKEN}`,
           }),

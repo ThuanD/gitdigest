@@ -1,8 +1,8 @@
-# GitHub Trending Digest
+# GitDigest
 
 A small web app that lists trending GitHub repositories and generates AI summaries (with optional translation) using AI APIs. The UI lives in `public/`; **Cloudflare Workers** (`worker.js`) serves those assets and implements `/api/*` via Wrangler — see [`wrangler.jsonc`](wrangler.jsonc).
 
-![github-trending preview](preview.png)
+![gitdigest preview](preview.png)
 
 ## Requirements
 
