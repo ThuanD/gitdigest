@@ -115,7 +115,7 @@ function mapTrendingRepository(repo) {
 function mapGitHubRepo(repo) {
   return {
     id: repo.full_name,
-    fullName: repo.fullName,
+    fullName: repo.full_name,
     htmlUrl: repo.html_url,
     stars: repo.stargazers_count,
     owner: repo.owner.login,
@@ -417,7 +417,7 @@ function stripBadgeLineBreaks(html) {
 
 async function renderGitHubMarkdown(content, fullName, env) {
   try {
-    const renderRes = await fetch("https://api.github.com/markdown", {
+    const response = await fetch("https://api.github.com/markdown", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -432,8 +432,8 @@ async function renderGitHubMarkdown(content, fullName, env) {
       }),
     });
 
-    if (renderRes.ok) {
-      const html = await renderRes.text();
+    if (response.ok) {
+      const html = await response.text();
       return html; // Will be processed by resolveMediaUrls
     }
     return null;
@@ -449,8 +449,8 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
 
   try {
     // Fetch README content
-    const readmeRes = await fetch(
-      `https://api.github.com/repos/${repo.full_name}/readme`,
+    const response = await fetch(
+      `https://api.github.com/repos/${repo.fullName}/readme`,
       {
         headers: {
           Accept: "application/vnd.github.v3+json",
@@ -462,14 +462,14 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
       },
     );
 
-    if (readmeRes.ok) {
-      const readmeData = await readmeRes.json();
+    if (response.ok) {
+      const readmeData = await response.json();
       readmeContent = decodeBase64(readmeData.content);
 
       // Render to HTML using GitHub's API
       readmeHtml = await renderGitHubMarkdown(
         readmeContent,
-        repo.full_name,
+        repo.fullName,
         env,
       );
 
@@ -477,7 +477,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
       if (readmeHtml) {
         readmeHtml = resolveMediaUrls(
           readmeHtml,
-          repo.full_name,
+          repo.fullName,
           repo.default_branch,
         );
         readmeHtml = stripBadgeLineBreaks(readmeHtml);
@@ -717,8 +717,8 @@ async function handleRepoDetails(request, url, env) {
 
     const result = {
       ...mapGitHubRepo(repo),
-      readme_content: readmeContent,
-      readme_html: readmeHtml,
+      readmeContent: readmeContent,
+      readmeHtml: readmeHtml,
       raw_api_response: repo,
       isCached,
     };

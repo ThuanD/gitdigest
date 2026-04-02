@@ -656,15 +656,15 @@ function processReadmeLinks(shadowRoot) {
 }
 
 function getReadmeHtml(data, repo) {
-  if (data.readme_html) {
-    return data.readme_html;
+  if (data.readmeHtml) {
+    return data.readmeHtml;
   }
   
   // Fallback to our own markdown parsing
   const fullName = data.raw_api_response?.full_name || repo.id;
   const branch = data.raw_api_response?.default_branch || "main";
   const md = resolveReadmeImages(
-    data.readme_content || "*No README available.*",
+    data.readmeContent || "*No README available.*",
     fullName,
     branch,
   );
