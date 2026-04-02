@@ -1,10 +1,13 @@
 const LIST_CACHE_TTL = 30 * 60 * 1000;
 const SUMMARY_CACHE_MAX = 500; // max entries (was mistakenly set to TTL ms)
 const REPO_CACHE_MAX = 200; // max entries (was mistakenly set to TTL ms)
+const WORDCLOUD_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const WORDCLOUD_CACHE_MAX = 100; // max entries
 
 const listIdCaches = new Map(); // key: "period-language" — was plain object, lookup never matched
 const summaryCache = new Map();
 const repoCache = new Map();
+const wordcloudCache = new Map();
 
 function corsHeaders() {
   return {
@@ -46,6 +49,14 @@ function repoCacheSet(key, value) {
     repoCache.delete(first);
   }
   repoCache.set(key, value);
+}
+
+function wordcloudCacheSet(key, value) {
+  if (wordcloudCache.size >= WORDCLOUD_CACHE_MAX && !wordcloudCache.has(key)) {
+    const first = wordcloudCache.keys().next().value;
+    wordcloudCache.delete(first);
+  }
+  wordcloudCache.set(key, { data: value, time: Date.now() });
 }
 
 async function handleStories(url) {
@@ -460,6 +471,219 @@ async function handleGitHubIssues(url, env) {
   }
 }
 
+async function handleWordCloud(url, env) {
+  try {
+    const period = url.searchParams.get("period") || "daily";
+    const language = url.searchParams.get("lang") || "";
+    const cacheKey = `${period}-${language}`;
+    
+    // Check cache first
+    const cached = wordcloudCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < WORDCLOUD_CACHE_TTL) {
+      return json({ ...cached.data, cached: true });
+    }
+
+    // Get trending stories (reuse existing logic)
+    const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
+    const since = sinceMap[period] || "daily";
+    
+    const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
+    
+    const res = await fetch(trendingUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
+        Accept: "text/html",
+      },
+    });
+
+    if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
+    
+    const stories = await parseTrendingPage(res);
+    
+    // AI Analysis for wordcloud
+    const apiKey = env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      // Fallback: Simple keyword extraction without AI
+      const wordData = extractBasicKeywords(stories);
+      wordcloudCacheSet(cacheKey, wordData);
+      return json(wordData);
+    }
+
+    // Prepare data for AI analysis
+    const repoData = stories.map(repo => ({
+      name: repo.name,
+      fullName: repo.fullName,
+      description: repo.description,
+      language: repo.language,
+      stars: repo.stars,
+      starsToday: repo.starsToday
+    }));
+
+    const systemPrompt = `You are a trend analysis expert specializing in GitHub repositories and technology trends.
+
+Analyze the provided GitHub trending repositories and extract meaningful technology trends for a word cloud visualization.
+
+Requirements:
+1. Extract technical keywords, programming languages, frameworks, and concepts
+2. Group related terms (e.g., "ai", "ml", "machine-learning" → "AI/ML")
+3. Filter out common words and focus on technical terms
+4. Weight terms by frequency, popularity (stars), and trend significance
+5. Categorize terms: languages, frameworks, domains, concepts
+6. Provide insights about emerging vs established trends
+
+Return JSON format:
+{
+  "words": [
+    {"text": "javascript", "size": 25, "category": "language", "repos": 8, "weight": 15},
+    {"text": "react", "size": 20, "category": "framework", "repos": 6, "weight": 12},
+    {"text": "ai/ml", "size": 18, "category": "domain", "repos": 5, "weight": 10}
+  ],
+  "categories": {
+    "languages": {"count": 5, "totalWeight": 45},
+    "frameworks": {"count": 8, "totalWeight": 38},
+    "domains": {"count": 4, "totalWeight": 25},
+    "concepts": {"count": 6, "totalWeight": 20}
+  },
+  "insights": [
+    "AI/ML projects dominate with 40% of trending repos",
+    "JavaScript ecosystem remains strong with React and Node.js",
+    "Rust gaining traction in systems programming"
+  ],
+  "trends": {
+    "emerging": ["rust", "webassembly", "blockchain"],
+    "established": ["javascript", "python", "react"],
+    "rising": ["ai/ml", "devops", "microservices"]
+  }
+}
+
+Constraints:
+- Maximum 50 words total
+- Minimum word length: 3 characters
+- Size range: 10-30 (based on weight)
+- Focus on actionable, technical insights`;
+
+    const userPrompt = `Analyze these GitHub trending repositories and extract technology trends:\n\n${JSON.stringify(repoData, null, 2)}`;
+
+    // Call AI API
+    let apiUrl, requestBody;
+
+    if (apiKey.startsWith("gsk_")) {
+      apiUrl = "https://api.groq.com/openai/v1/chat/completions";
+      requestBody = {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2048,
+      };
+    } else if (apiKey.startsWith("sk-")) {
+      apiUrl = "https://api.openai.com/v1/chat/completions";
+      requestBody = {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2048,
+      };
+    } else {
+      // Gemini
+      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      requestBody = {
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
+      };
+    }
+
+    const headers = { "Content-Type": "application/json" };
+    if (!apiKey.startsWith("AIza")) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    const aiRes = await fetch(apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+
+    const aiData = await aiRes.json();
+    if (aiData.error) throw new Error(aiData.error.message || "AI analysis failed");
+
+    const analysis = apiKey.startsWith("AIza")
+      ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
+      : aiData.choices?.[0]?.message?.content;
+
+    if (!analysis) throw new Error("No analysis received from AI");
+
+    // Parse AI response
+    let wordData;
+    try {
+      wordData = JSON.parse(analysis);
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      wordData = extractBasicKeywords(stories);
+    }
+
+    // Cache the result
+    wordcloudCacheSet(cacheKey, wordData);
+    
+    return json({ ...wordData, cached: false });
+
+  } catch (error) {
+    console.error("WordCloud analysis error:", error);
+    return json({ error: "Failed to generate wordcloud analysis" }, 500);
+  }
+}
+
+function extractBasicKeywords(stories) {
+  const words = new Map();
+  const categories = { languages: 0, frameworks: 0, domains: 0, concepts: 0 };
+  
+  stories.forEach(story => {
+    // Language (highest weight)
+    if (story.language) {
+      const lang = story.language.toLowerCase();
+      words.set(lang, (words.get(lang) || 0) + 3);
+      categories.languages++;
+    }
+    
+    // Description keywords
+    if (story.description) {
+      const descWords = story.description.toLowerCase()
+        .split(/\s+/)
+        .filter(word => word.length > 3)
+        .filter(word => !['the', 'and', 'for', 'with', 'that', 'this', 'from', 'they', 'have', 'been'].includes(word));
+      
+      descWords.forEach(word => {
+        words.set(word, (words.get(word) || 0) + 1);
+        categories.concepts++;
+      });
+    }
+  });
+  
+  // Convert to wordcloud format
+  const wordArray = Array.from(words.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 30)
+    .map(([text, weight]) => ({
+      text,
+      size: Math.min(30, Math.max(10, weight * 2)),
+      category: 'concepts',
+      repos: 1,
+      weight
+    }));
+  
+  return {
+    words: wordArray,
+    categories,
+    insights: ["Basic keyword extraction (AI analysis unavailable)"],
+    trends: { emerging: [], established: [], rising: [] }
+  };
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -473,6 +697,7 @@ export default {
     if (path === "/api/repo") return handleRepoDetails(url, env);
     if (path === "/api/issues") return handleGitHubIssues(url, env);
     if (path === "/api/summarize") return handleSummarize(request, url, env);
+    if (path === "/api/wordcloud") return handleWordCloud(url, env);
 
     return env.ASSETS.fetch(request);
   },

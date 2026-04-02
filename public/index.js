@@ -91,6 +91,7 @@ let activeCardId = null;
 let currentActiveStory = null;
 let currentPage = 1;
 let hideReadActive = false;
+let currentStories = []; // For wordcloud filtering
 let feedKind = localStorage.getItem(LS_FEED_KIND) || "daily";
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -137,6 +138,18 @@ const feedKindWeekly = document.getElementById("feedKindWeekly");
 const feedKindMonthly = document.getElementById("feedKindMonthly");
 const hideReadToggle = document.getElementById("hideReadToggle");
 const toggleKnob = document.getElementById("toggleKnob");
+
+// ─── WordCloud ───────────────────────────────────────────────────────────────────
+const wordcloudBtn = document.getElementById("wordcloudBtn");
+const wordcloudModal = document.getElementById("wordcloudModal");
+const closeWordcloudBtn = document.getElementById("closeWordcloudBtn");
+const wordcloudPeriod = document.getElementById("wordcloudPeriod");
+const wordcloudCanvas = document.getElementById("wordcloudCanvas");
+const wordcloudLoading = document.getElementById("wordcloudLoading");
+const wordcloudStatus = document.getElementById("wordcloudStatus");
+const wordcloudCategories = document.getElementById("wordcloudCategories");
+const wordcloudInsights = document.getElementById("wordcloudInsights");
+const wordcloudTrends = document.getElementById("wordcloudTrends");
 
 // ─── Settings modal ───────────────────────────────────────────────────────────
 openSettingsBtn.addEventListener("click", () => {
@@ -894,6 +907,9 @@ async function loadStoriesClient(page = 1) {
 
 // Extracted from loadStoriesClient so pagination can call it correctly
 function renderStoriesFromIds(stories) {
+  // Store current stories for wordcloud filtering
+  currentStories = stories;
+  
   const frag = document.createDocumentFragment();
   stories.forEach((story, i) => {
     const card = document.createElement("div");
@@ -1148,6 +1164,158 @@ async function loadSummaryForStory(story) {
         <p class="text-textMuted text-sm max-w-md">Failed to generate summary. Please check your API key and try again.</p>
       </div>`;
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Summary failed — check API key</span></span>`;
+  }
+}
+
+// ─── WordCloud ───────────────────────────────────────────────────────────────────
+wordcloudBtn.addEventListener("click", () => {
+  wordcloudModal.showModal();
+  loadWordCloud();
+});
+
+closeWordcloudBtn.addEventListener("click", () => wordcloudModal.close());
+
+wordcloudPeriod.addEventListener("change", () => loadWordCloud());
+
+async function loadWordCloud() {
+  try {
+    // Show loading
+    wordcloudCanvas.style.display = "none";
+    wordcloudLoading.classList.remove("hidden");
+    wordcloudStatus.textContent = "Loading...";
+    
+    const period = wordcloudPeriod.value;
+    const res = await fetch(`/api/wordcloud?period=${period}&lang=`);
+    const data = await res.json();
+    
+    if (data.error) throw new Error(data.error);
+    
+    // Update status
+    wordcloudStatus.textContent = data.cached ? "From cache" : "Generated";
+    
+    // Render wordcloud
+    renderWordCloud(data.words);
+    
+    // Render insights
+    renderWordCloudInsights(data);
+    
+  } catch (error) {
+    console.error("WordCloud load error:", error);
+    wordcloudStatus.textContent = "Error";
+    wordcloudLoading.classList.add("hidden");
+    wordcloudCanvas.style.display = "block";
+  }
+}
+
+function renderWordCloud(words) {
+  wordcloudLoading.classList.add("hidden");
+  wordcloudCanvas.style.display = "block";
+  
+  // Prepare data for wordcloud2
+  const wordList = words.map(word => [word.text, word.size]);
+  
+  // Configure wordcloud
+  WordCloud(wordcloudCanvas, {
+    list: wordList,
+    gridSize: 8,
+    weightFactor: 3,
+    fontFamily: '"Geist Sans", sans-serif',
+    color: function(word, weight) {
+      // Color based on category
+      const wordData = words.find(w => w.text === word);
+      if (wordData) {
+        switch(wordData.category) {
+          case 'language': return '#60a5fa'; // blue
+          case 'framework': return '#34d399'; // green  
+          case 'domain': return '#f59e0b'; // amber
+          case 'concept': return '#a78bfa'; // purple
+          default: return '#e4e4e7'; // gray
+        }
+      }
+      return '#e4e4e7';
+    },
+    rotateRatio: 0.3,
+    rotationSteps: 2,
+    backgroundColor: 'transparent',
+    click: function(item) {
+      if (item && item[0]) {
+        handleWordCloudClick(item[0]);
+      }
+    }
+  });
+}
+
+function renderWordCloudInsights(data) {
+  // Categories
+  if (data.categories) {
+    const categoriesHtml = Object.entries(data.categories)
+      .map(([key, value]) => `
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-textMuted capitalize">${key}</span>
+          <span class="text-xs font-mono text-hn">${value.count || 0}</span>
+        </div>
+      `).join('');
+    wordcloudCategories.innerHTML = categoriesHtml;
+  }
+  
+  // Insights
+  if (data.insights && data.insights.length > 0) {
+    const insightsHtml = data.insights
+      .map(insight => `<li class="flex items-start gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn mt-1.5 shrink-0"></span><span>${insight}</span></li>`)
+      .join('');
+    wordcloudInsights.innerHTML = insightsHtml;
+  }
+  
+  // Trends
+  if (data.trends) {
+    const trendsHtml = `
+      ${data.trends.emerging && data.trends.emerging.length > 0 ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">🚀 Emerging</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.emerging.map(trend => `<span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">${trend}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${data.trends.established && data.trends.established.length > 0 ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">💪 Established</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.established.map(trend => `<span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded-full">${trend}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${data.trends.rising && data.trends.rising.length > 0 ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">📈 Rising</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.rising.map(trend => `<span class="px-2 py-1 bg-amber-500/20 text-amber-400 text-xs rounded-full">${trend}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+    wordcloudTrends.innerHTML = trendsHtml;
+  }
+}
+
+function handleWordCloudClick(word) {
+  // Filter stories based on clicked word
+  const filteredStories = currentStories ? currentStories.filter(story => 
+    story.description?.toLowerCase().includes(word.toLowerCase()) ||
+    story.language?.toLowerCase().includes(word.toLowerCase()) ||
+    story.title?.toLowerCase().includes(word.toLowerCase())
+  ) : [];
+  
+  if (filteredStories.length > 0) {
+    // Close modal and show filtered results
+    wordcloudModal.close();
+    
+    // Update feed list with filtered stories
+    renderStoriesFromIds(filteredStories);
+    
+    // Show status
+    statusDot.classList.remove("animate-pulse");
+    statusTextEl.textContent = `${filteredStories.length} repos for "${word}"`;
   }
 }
 
