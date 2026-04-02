@@ -714,13 +714,15 @@ async function openSourcePanelForStory(story, persistPreference) {
   sourceFramePanel.classList.remove("hidden");
   sourceFramePanel.removeAttribute("hidden");
 
+  if (persistPreference) setSourceOpenPreference(true);
+  syncReaderViewToggleUi();
+
   const cacheKey = story.id;
   const cached = readmeCache.get(cacheKey);
   const now = Date.now();
 
   if (cached && now - cached.time < README_CACHE_TTL) {
     renderReadmeContent(cached.data, story);
-    if (persistPreference) setSourceOpenPreference(true);
     syncReaderViewToggleUi();
     return;
   }
@@ -749,9 +751,6 @@ async function openSourcePanelForStory(story, persistPreference) {
     console.error("README load failed:", err);
     renderReadmeError(err, story);
   }
-
-  if (persistPreference) setSourceOpenPreference(true);
-  syncReaderViewToggleUi();
 }
 
 function renderReadmeContent(data, story) {
