@@ -298,7 +298,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
     
     if (readmeRes.ok) {
       const readmeData = await readmeRes.json();
-      readmeContent = atob(readmeData.content);
+      readmeContent = decodeBase64(readmeData.content);
       
       // Render to HTML using GitHub's API
       readmeHtml = await renderGitHubMarkdown(readmeContent, repo.full_name, env);
@@ -327,6 +327,16 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
   }
   
   return { readmeContent, readmeHtml };
+}
+
+// ─── Utility Functions ─────────────────────────────────────────────────────────────
+function decodeBase64(base64) {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 function mapGitHubRepo(repo) {
