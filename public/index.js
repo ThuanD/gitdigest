@@ -370,7 +370,11 @@ function isRead(id) {
 function applyReadState(story, cardElement) {
   cardElement.classList.add("is-read");
   const icon = cardElement.querySelector(".check-icon");
-  if (icon) icon.classList.replace("hidden", "block");
+  if (icon) {
+    // Fix: Toggle opacity classes properly instead of looking for non-existent 'hidden' class
+    icon.classList.remove("opacity-0");
+    icon.classList.add("opacity-100");
+  }
   markAsRead(story.id);
 }
 
@@ -1277,16 +1281,10 @@ async function handleCardClick(story, cardElement) {
 
   // Load content based on user preference
   if (getSourceOpenPreference()) {
-    // User prefers source, but summary is loaded by default
-    // So we need to switch to source after loading summary
-    await loadSummaryForStory(story);
-    // Then switch to source panel
-    if (!sourceFramePanel.classList.contains("hidden")) {
-      closeSourcePanel(false);
-    }
+    // User prefers source - go directly to source panel
     await openSourcePanelForStory(story, false);
   } else {
-    // User prefers summary, load it
+    // User prefers summary - load summary
     await loadSummaryForStory(story);
   }
 }
