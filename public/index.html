@@ -235,16 +235,54 @@
           </button>
         </div>
 
-        <div class="pt-4 border-t border-borderSubtle">
+        <div class="pt-3 pb-3 border-t border-borderSubtle flex gap-2">
           <button
             id="wordcloudBtn"
             type="button"
-            class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surface hover:bg-surfaceHover border border-borderSubtle rounded-lg transition-colors group"
+            class="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-surface hover:bg-surfaceHover border border-borderSubtle rounded-lg transition-colors group"
           >
-            <svg class="w-4 h-4 text-textMuted group-hover:text-hn transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+            <svg
+              class="w-3.5 h-3.5 text-textMuted group-hover:text-hn transition-colors"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+              />
             </svg>
-            <span class="text-sm text-textMuted group-hover:text-textMain transition-colors">Trending Technologies</span>
+            <span
+              class="text-xs text-textMuted group-hover:text-textMain transition-colors"
+              >Word Cloud</span
+            >
+          </button>
+          <button
+            id="wordcloudClearBtn"
+            type="button"
+            disabled
+            class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-surface group hover:bg-surfaceHover border border-borderSubtle rounded-lg transition-colors text-sm text-textMuted disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:bg-surfaceHover hover:enabled:text-textMain hover:enabled:border-borderHover"
+            title="Clear word filter"
+          >
+            <svg
+              class="w-3.5 h-3.5 text-textMuted group-hover:text-hn transition-colors"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+            <span
+              class="text-xs text-textMuted group-hover:text-textMain transition-colors"
+              >Clear</span
+            >
           </button>
         </div>
       </header>
@@ -547,15 +585,29 @@
       id="wordcloudModal"
       class="backdrop:bg-black/50 backdrop:backdrop-blur-sm p-0 rounded-2xl shadow-2xl max-w-5xl w-[95vw] max-h-[90vh] border border-borderSubtle bg-surface"
     >
-      <div class="flex items-center justify-between p-6 border-b border-borderSubtle">
-        <h2 class="text-xl font-semibold text-textMain">Trending Technologies</h2>
+      <div
+        class="flex items-center justify-between p-6 border-b border-borderSubtle"
+      >
+        <h2 class="text-xl font-semibold text-textMain">
+          Trending Technologies
+        </h2>
         <button
           id="closeWordcloudBtn"
           type="button"
           class="w-8 h-8 rounded-lg flex items-center justify-center text-textMuted hover:text-white hover:bg-surfaceHover transition-colors"
         >
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -563,25 +615,36 @@
       <div class="p-6 max-h-[70vh] overflow-y-auto">
         <!-- Period Selector -->
         <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-4">
-            <label class="text-sm text-textMuted">Period:</label>
-            <select id="wordcloudPeriod" class="bg-surface border border-borderSubtle rounded-lg px-3 py-1.5 text-sm text-textMain focus:outline-none focus:border-hn">
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-          <div id="wordcloudStatus" class="text-xs text-textMuted font-mono"></div>
+          <span
+            class="text-xs text-textMuted font-mono uppercase tracking-wider"
+            id="wordcloudPeriodLabel"
+          ></span>
+          <div
+            id="wordcloudStatus"
+            class="text-xs text-textMuted font-mono"
+          ></div>
         </div>
 
         <!-- WordCloud Container -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- WordCloud Canvas -->
           <div class="lg:col-span-2">
-            <div class="bg-appBg border border-borderSubtle rounded-xl p-4 min-h-[400px] flex items-center justify-center">
-              <canvas id="wordcloudCanvas" width="600" height="400" class="w-full h-full"></canvas>
-              <div id="wordcloudLoading" class="hidden flex-col items-center justify-center">
-                <div class="animate-spin w-8 h-8 border-2 border-hn border-t-transparent rounded-full mb-4"></div>
+            <div
+              class="bg-appBg border border-borderSubtle rounded-xl p-4 min-h-[400px] flex items-center justify-center"
+            >
+              <canvas
+                id="wordcloudCanvas"
+                width="600"
+                height="400"
+                class="w-full h-full"
+              ></canvas>
+              <div
+                id="wordcloudLoading"
+                class="hidden flex-col items-center justify-center"
+              >
+                <div
+                  class="animate-spin w-8 h-8 border-2 border-hn border-t-transparent rounded-full mb-4"
+                ></div>
                 <span class="text-sm text-textMuted">Analyzing trends...</span>
               </div>
             </div>
@@ -597,13 +660,20 @@
 
             <!-- Insights -->
             <div class="bg-appBg border border-borderSubtle rounded-xl p-4">
-              <h3 class="text-sm font-medium text-textMain mb-3">Key Insights</h3>
-              <ul id="wordcloudInsights" class="space-y-2 text-sm text-textMuted"></ul>
+              <h3 class="text-sm font-medium text-textMain mb-3">
+                Key Insights
+              </h3>
+              <ul
+                id="wordcloudInsights"
+                class="space-y-2 text-sm text-textMuted"
+              ></ul>
             </div>
 
             <!-- Trends -->
             <div class="bg-appBg border border-borderSubtle rounded-xl p-4">
-              <h3 class="text-sm font-medium text-textMain mb-3">Trend Analysis</h3>
+              <h3 class="text-sm font-medium text-textMain mb-3">
+                Trend Analysis
+              </h3>
               <div id="wordcloudTrends" class="space-y-3"></div>
             </div>
           </div>

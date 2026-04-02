@@ -471,12 +471,12 @@ async function handleGitHubIssues(url, env) {
   }
 }
 
-async function handleWordCloud(url, env) {
+async function handleWordCloud(request, url, env) {
   try {
     const period = url.searchParams.get("period") || "daily";
     const language = url.searchParams.get("lang") || "";
     const cacheKey = `${period}-${language}`;
-    
+
     // Check cache first
     const cached = wordcloudCache.get(cacheKey);
     if (cached && Date.now() - cached.time < WORDCLOUD_CACHE_TTL) {
@@ -486,9 +486,9 @@ async function handleWordCloud(url, env) {
     // Get trending stories (reuse existing logic)
     const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
     const since = sinceMap[period] || "daily";
-    
+
     const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
-    
+
     const res = await fetch(trendingUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
@@ -497,11 +497,12 @@ async function handleWordCloud(url, env) {
     });
 
     if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
-    
+
     const stories = await parseTrendingPage(res);
-    
+
     // AI Analysis for wordcloud
-    const apiKey = env.OPENAI_API_KEY?.trim();
+    const apiKey =
+      openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
     if (!apiKey) {
       // Fallback: Simple keyword extraction without AI
       const wordData = extractBasicKeywords(stories);
@@ -510,13 +511,13 @@ async function handleWordCloud(url, env) {
     }
 
     // Prepare data for AI analysis
-    const repoData = stories.map(repo => ({
+    const repoData = stories.map((repo) => ({
       name: repo.name,
       fullName: repo.fullName,
       description: repo.description,
       language: repo.language,
       stars: repo.stars,
-      starsToday: repo.starsToday
+      starsToday: repo.starsToday,
     }));
 
     const systemPrompt = `You are a trend analysis expert specializing in GitHub repositories and technology trends.
@@ -573,7 +574,7 @@ Constraints:
         model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
         max_tokens: 2048,
@@ -584,7 +585,7 @@ Constraints:
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
         max_tokens: 2048,
@@ -610,7 +611,8 @@ Constraints:
     });
 
     const aiData = await aiRes.json();
-    if (aiData.error) throw new Error(aiData.error.message || "AI analysis failed");
+    if (aiData.error)
+      throw new Error(aiData.error.message || "AI analysis failed");
 
     const analysis = apiKey.startsWith("AIza")
       ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
@@ -629,58 +631,159 @@ Constraints:
 
     // Cache the result
     wordcloudCacheSet(cacheKey, wordData);
-    
-    return json({ ...wordData, cached: false });
 
+    return json({ ...wordData, cached: false });
   } catch (error) {
     console.error("WordCloud analysis error:", error);
     return json({ error: "Failed to generate wordcloud analysis" }, 500);
   }
 }
 
+const KNOWN_LANGUAGES = new Set([
+  "python",
+  "javascript",
+  "typescript",
+  "rust",
+  "go",
+  "java",
+  "kotlin",
+  "swift",
+  "c++",
+  "c#",
+  "ruby",
+  "php",
+  "scala",
+  "elixir",
+  "haskell",
+  "zig",
+  "lua",
+  "dart",
+]);
+const KNOWN_FRAMEWORKS = new Set([
+  "react",
+  "vue",
+  "angular",
+  "nextjs",
+  "django",
+  "flask",
+  "fastapi",
+  "spring",
+  "rails",
+  "laravel",
+  "express",
+  "svelte",
+  "nuxt",
+  "remix",
+  "astro",
+  "pytorch",
+  "tensorflow",
+]);
+const STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "from",
+  "they",
+  "have",
+  "been",
+  "your",
+  "code",
+  "tool",
+  "using",
+  "based",
+  "make",
+  "more",
+  "into",
+  "than",
+  "over",
+]);
+
 function extractBasicKeywords(stories) {
-  const words = new Map();
-  const categories = { languages: 0, frameworks: 0, domains: 0, concepts: 0 };
-  
-  stories.forEach(story => {
-    // Language (highest weight)
+  const wordMap = new Map(); // text → { weight, category }
+  let langCount = 0,
+    fwCount = 0,
+    conceptCount = 0;
+
+  stories.forEach((story) => {
     if (story.language) {
       const lang = story.language.toLowerCase();
-      words.set(lang, (words.get(lang) || 0) + 3);
-      categories.languages++;
+      const e = wordMap.get(lang) || { weight: 0, category: "language" };
+      e.weight += 3;
+      wordMap.set(lang, e);
+      langCount++;
     }
-    
-    // Description keywords
-    if (story.description) {
-      const descWords = story.description.toLowerCase()
-        .split(/\s+/)
-        .filter(word => word.length > 3)
-        .filter(word => !['the', 'and', 'for', 'with', 'that', 'this', 'from', 'they', 'have', 'been'].includes(word));
-      
-      descWords.forEach(word => {
-        words.set(word, (words.get(word) || 0) + 1);
-        categories.concepts++;
-      });
-    }
+
+    const text = (
+      (story.description || "") +
+      " " +
+      (story.name || "")
+    ).toLowerCase();
+    text.split(/[\s\-_/]+/).forEach((raw) => {
+      const word = raw.replace(/[^a-z0-9.#+]/g, "");
+      if (word.length < 3 || STOPWORDS.has(word)) return;
+
+      const category = KNOWN_LANGUAGES.has(word)
+        ? "language"
+        : KNOWN_FRAMEWORKS.has(word)
+          ? "framework"
+          : "concept";
+
+      const e = wordMap.get(word) || { weight: 0, category };
+      e.weight += category === "language" ? 2 : 1;
+      wordMap.set(word, e);
+
+      if (category === "framework") fwCount++;
+      else if (category === "concept") conceptCount++;
+    });
   });
-  
-  // Convert to wordcloud format
-  const wordArray = Array.from(words.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30)
-    .map(([text, weight]) => ({
+
+  const wordArray = Array.from(wordMap.entries())
+    .sort((a, b) => b[1].weight - a[1].weight)
+    .slice(0, 40)
+    .map(([text, { weight, category }]) => ({
       text,
       size: Math.min(30, Math.max(10, weight * 2)),
-      category: 'concepts',
-      repos: 1,
-      weight
+      category,
+      repos: Math.ceil(weight / 2),
+      weight,
     }));
-  
+
+  const topLangs = wordArray
+    .filter((w) => w.category === "language")
+    .map((w) => w.text);
+  const topFws = wordArray
+    .filter((w) => w.category === "framework")
+    .map((w) => w.text);
+  const topOthers = wordArray
+    .filter((w) => w.category === "concept")
+    .map((w) => w.text);
+
+  const insights = [
+    `${stories.length} repositories analyzed`,
+    topLangs.length
+      ? `Top languages: ${topLangs.slice(0, 3).join(", ")}`
+      : null,
+    topFws.length ? `Key frameworks: ${topFws.slice(0, 3).join(", ")}` : null,
+    "Add an API key in Settings for AI-powered insights",
+  ].filter(Boolean);
+
   return {
     words: wordArray,
-    categories,
-    insights: ["Basic keyword extraction (AI analysis unavailable)"],
-    trends: { emerging: [], established: [], rising: [] }
+    categories: {
+      languages: { count: langCount, totalWeight: langCount * 3 },
+      frameworks: { count: fwCount, totalWeight: fwCount * 2 },
+      domains: { count: 0, totalWeight: 0 },
+      concepts: { count: conceptCount, totalWeight: conceptCount },
+    },
+    insights,
+    trends: {
+      emerging: topOthers.slice(0, 4),
+      established: topLangs.slice(0, 4),
+      rising: topFws.slice(0, 4),
+    },
   };
 }
 
@@ -697,7 +800,7 @@ export default {
     if (path === "/api/repo") return handleRepoDetails(url, env);
     if (path === "/api/issues") return handleGitHubIssues(url, env);
     if (path === "/api/summarize") return handleSummarize(request, url, env);
-    if (path === "/api/wordcloud") return handleWordCloud(url, env);
+    if (path === "/api/wordcloud") return handleWordCloud(request, url, env);
 
     return env.ASSETS.fetch(request);
   },
