@@ -476,32 +476,32 @@ function getReadmeStyles() {
       }
       
       /* Centered div with badges should stay inline */
-      div[align="center"] {
+      div[align="center"], div[align="center"] p {
         text-align: center !important;
-        line-height: 1.2 !important;
       }
-      
+
       div[align="center"] a {
-        display: inline-block !important;
+        display: inline !important;
         margin: 0 2px !important;
       }
-      
-      div[align="center"] a img {
+
+      div[align="center"] a img,
+      div[align="center"] p a img {
         display: inline !important;
         vertical-align: middle !important;
         max-width: none !important;
         border: none !important;
         border-radius: 0 !important;
-        margin: 0 !important;
+        margin: 2px !important;
       }
-      
-      /* General inline images (badges, shields) */
-      p a img, div[align="center"] img {
+
+      /* General badge pattern: <p> containing only <a><img></a> */
+      p > a > img[src*="shields.io"],
+      p > a > img[src*="badge"],
+      p > a > img[src*="camo.githubusercontent"] {
         display: inline !important;
         vertical-align: middle !important;
-        max-width: none !important;
-        border: none !important;
-        border-radius: 0 !important;
+        margin: 2px !important;
       }
       
       code { 

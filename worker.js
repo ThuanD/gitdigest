@@ -251,6 +251,13 @@ function resolveMediaUrls(html, fullName, defaultBranch = 'main') {
     );
 }
 
+function stripBadgeLineBreaks(html) {
+  // Remove <br> tags inserted between consecutive badge/image links
+  // GitHub API adds <br> for each newline inside a paragraph, but the
+  // website renderer treats them as inline — we need to match that behaviour
+  return html.replace(/<\/a>\s*<br\s*\/?>\s*(<a\s)/gi, "</a>\n$1");
+}
+
 async function renderGitHubMarkdown(content, fullName, env) {
   try {
     const renderRes = await fetch("https://api.github.com/markdown", {
@@ -306,6 +313,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
       // Resolve media URLs if HTML was rendered
       if (readmeHtml) {
         readmeHtml = resolveMediaUrls(readmeHtml, repo.full_name, repo.default_branch);
+        readmeHtml = stripBadgeLineBreaks(readmeHtml);
       }
       
       // For AI summary, process content to be more concise
