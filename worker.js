@@ -198,57 +198,59 @@ async function parseTrendingPage(response) {
   });
 }
 
-function resolveMediaUrls(html, fullName, defaultBranch = 'main') {
+function resolveMediaUrls(html, fullName, defaultBranch = "main") {
   const base = `https://raw.githubusercontent.com/${fullName}/${defaultBranch}`;
-  return html
-    // Handle <img> tags with double quotes
-    .replace(
-      /<img([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<img${before} src="${base}/${cleanSrc}"${after}>`;
-      }
-    )
-    // Handle <img> tags with single quotes
-    .replace(
-      /<img([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<img${before} src='${base}/${cleanSrc}'${after}>`;
-      }
-    )
-    // Handle <video> tags with double quotes
-    .replace(
-      /<video([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<video${before} src="${base}/${cleanSrc}"${after}>`;
-      }
-    )
-    // Handle <video> tags with single quotes
-    .replace(
-      /<video([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<video${before} src='${base}/${cleanSrc}'${after}>`;
-      }
-    )
-    // Handle <source> tags inside <video> with double quotes
-    .replace(
-      /<source([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<source${before} src="${base}/${cleanSrc}"${after}>`;
-      }
-    )
-    // Handle <source> tags inside <video> with single quotes
-    .replace(
-      /<source([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
-      (_, before, src, after) => {
-        const cleanSrc = src.replace(/^\.\//, "");
-        return `<source${before} src='${base}/${cleanSrc}'${after}>`;
-      }
-    );
+  return (
+    html
+      // Handle <img> tags with double quotes
+      .replace(
+        /<img([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<img${before} src="${base}/${cleanSrc}"${after}>`;
+        },
+      )
+      // Handle <img> tags with single quotes
+      .replace(
+        /<img([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<img${before} src='${base}/${cleanSrc}'${after}>`;
+        },
+      )
+      // Handle <video> tags with double quotes
+      .replace(
+        /<video([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<video${before} src="${base}/${cleanSrc}"${after}>`;
+        },
+      )
+      // Handle <video> tags with single quotes
+      .replace(
+        /<video([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<video${before} src='${base}/${cleanSrc}'${after}>`;
+        },
+      )
+      // Handle <source> tags inside <video> with double quotes
+      .replace(
+        /<source([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<source${before} src="${base}/${cleanSrc}"${after}>`;
+        },
+      )
+      // Handle <source> tags inside <video> with single quotes
+      .replace(
+        /<source([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+        (_, before, src, after) => {
+          const cleanSrc = src.replace(/^\.\//, "");
+          return `<source${before} src='${base}/${cleanSrc}'${after}>`;
+        },
+      )
+  );
 }
 
 function stripBadgeLineBreaks(html) {
@@ -271,10 +273,10 @@ async function renderGitHubMarkdown(content, fullName, env) {
       body: JSON.stringify({
         text: content,
         mode: "gfm",
-        context: fullName
+        context: fullName,
       }),
     });
-    
+
     if (renderRes.ok) {
       const html = await renderRes.text();
       return html; // Will be processed by resolveMediaUrls
@@ -289,7 +291,7 @@ async function renderGitHubMarkdown(content, fullName, env) {
 async function fetchAndRenderReadme(repo, env, forAI = false) {
   let readmeContent = "";
   let readmeHtml = "";
-  
+
   try {
     // Fetch README content
     const readmeRes = await fetch(
@@ -298,24 +300,34 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
         headers: {
           Accept: "application/vnd.github.v3+json",
           "User-Agent": "Github-Trending-Digest-Worker",
-          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+          ...(env.GITHUB_TOKEN && {
+            Authorization: `token ${env.GITHUB_TOKEN}`,
+          }),
         },
       },
     );
-    
+
     if (readmeRes.ok) {
       const readmeData = await readmeRes.json();
       readmeContent = decodeBase64(readmeData.content);
-      
+
       // Render to HTML using GitHub's API
-      readmeHtml = await renderGitHubMarkdown(readmeContent, repo.full_name, env);
-      
+      readmeHtml = await renderGitHubMarkdown(
+        readmeContent,
+        repo.full_name,
+        env,
+      );
+
       // Resolve media URLs if HTML was rendered
       if (readmeHtml) {
-        readmeHtml = resolveMediaUrls(readmeHtml, repo.full_name, repo.default_branch);
+        readmeHtml = resolveMediaUrls(
+          readmeHtml,
+          repo.full_name,
+          repo.default_branch,
+        );
         readmeHtml = stripBadgeLineBreaks(readmeHtml);
       }
-      
+
       // For AI summary, process content to be more concise
       if (forAI && readmeContent) {
         readmeContent = readmeContent
@@ -333,7 +345,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
   } catch (readmeError) {
     console.log("README fetch failed:", readmeError.message);
   }
-  
+
   return { readmeContent, readmeHtml };
 }
 
@@ -344,7 +356,7 @@ function decodeBase64(base64) {
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
-  return new TextDecoder('utf-8').decode(bytes);
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 function mapGitHubRepo(repo) {
@@ -364,6 +376,17 @@ function mapGitHubRepo(repo) {
     api_url: repo.url,
     owner_avatar: repo.owner.avatar_url,
   };
+}
+
+function safeParseJson(raw) {
+  if (!raw) return null;
+  // Strip ```json ... ``` or ``` ... ```
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  return JSON.parse(stripped);
 }
 
 async function handleSummarize(request, url, env) {
@@ -408,7 +431,11 @@ async function handleSummarize(request, url, env) {
     const repo = await repoRes.json();
 
     // Fetch and render README using the new function (with AI processing)
-    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env, true);
+    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(
+      repo,
+      env,
+      true,
+    );
 
     let contentToSummarize = `Repository: ${repo.full_name}\n`;
     contentToSummarize += `Description: ${repo.description || "No description"}\n`;
@@ -418,18 +445,43 @@ async function handleSummarize(request, url, env) {
     contentToSummarize += `Topics: ${(repo.topics || []).join(", ")}\n`;
     if (readmeContent) contentToSummarize += `\nREADME:\n${readmeContent}`;
 
-    const systemPrompt = `You are an expert technical summarizer specializing in GitHub repositories and open source projects.
+    const systemPrompt = `You are a senior software engineer and technical writer reviewing GitHub repositories for a developer audience.
 
-Output requirements:
-- Write in the language for ISO code '${lang}' for the entire answer (headings, bullets, and prose).
-- Focus on: What the project does, its key features, technical stack, and why it's notable.
-- Highlight: Programming language, architecture patterns, dependencies, and use cases.
-- Use clear Markdown: **bold** for emphasis, bullet lists where helpful, short subheadings (##) to organize answers.
-- Include: Star count context, recent activity indicators, and community engagement.
-- If README is sparse, provide educated context about the technology stack and typical use cases.
-- Target 400-700 words for comprehensive coverage.`;
+## Output Language
+Write the ENTIRE response in the language matching ISO code: '${lang}' — including all headings, labels, bullet points, and prose.
 
-    const userPrompt = `Analyze and summarize this GitHub repository for developers. Explain what the project does, its technical implementation, key features, and why it's gaining traction.\n\n${contentToSummarize}`;
+## Response Structure (use this exact order)
+### 🔍 Overview
+One concise paragraph: what the project is, its core purpose, and the problem it solves.
+
+### ⚙️ Technical Stack
+- Primary language & runtime
+- Key frameworks, libraries, dependencies
+- Architecture pattern (e.g. microservice, CLI tool, SDK, plugin, etc.)
+
+### ✨ Key Features
+3-6 bullet points highlighting the most impactful or distinctive capabilities.
+
+### 🎯 Use Cases
+Who would use this and in what scenarios. Be specific (e.g. "backend developers needing X", not just "developers").
+
+### 📈 Traction & Signals
+Interpret the star count and forks in context of the repo's age and domain. Note any notable topics or community indicators.
+
+### 💡 Why It Stands Out
+1-2 sentences on what makes this repo notable compared to alternatives, or why it's gaining attention now.
+
+## Tone & Formatting Rules
+- Be precise and technical — avoid vague marketing language like "powerful" or "easy to use" without evidence.
+- Use **bold** only for proper nouns, library names, and critical terms.
+- Target length: 350-550 words. Prioritize clarity over completeness.
+- If README is missing or sparse, reason from the repo metadata and tech stack — clearly note when you're inferring.`;
+
+    const userPrompt = `Analyze the following GitHub repository and produce a structured technical summary for developers evaluating whether to use or follow this project.
+
+${contentToSummarize}
+
+Focus on actionable insight: what exactly does this do, how is it built, and why should a developer care?`;
 
     let apiUrl, requestBody;
 
@@ -541,7 +593,7 @@ async function handleRepoDetails(url, env) {
     }
 
     const repo = await repoRes.json();
-    
+
     // Fetch and render README using the new function
     const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
 
@@ -643,50 +695,60 @@ async function handleWordCloud(request, url, env) {
       starsToday: repo.starsToday,
     }));
 
-    const systemPrompt = `You are a trend analysis expert specializing in GitHub repositories and technology trends.
+    const systemPrompt = `You are a technology intelligence analyst specializing in open source trends.
 
-Analyze the provided GitHub trending repositories and extract meaningful technology trends for a word cloud visualization.
+Your task: analyze GitHub trending repositories and return a structured JSON object for a word cloud visualization.
 
-Requirements:
-1. Extract technical keywords, programming languages, frameworks, and concepts
-2. Group related terms (e.g., "ai", "ml", "machine-learning" → "AI/ML")
-3. Filter out common words and focus on technical terms
-4. Weight terms by frequency, popularity (stars), and trend significance
-5. Categorize terms: languages, frameworks, domains, concepts
-6. Provide insights about emerging vs established trends
+## Analysis Strategy
+- Extract technical terms: languages, frameworks, libraries, domains, architectural concepts
+- Normalize variants: "machine-learning", "ml", "machine learning" → "machine-learning"
+- Suppress noise: ignore generic words (tool, project, simple, awesome, build, based, use, support, fast, easy, new, app, make, help, open, data, list)
+- Infer domain clusters from co-occurring signals (e.g. "llm" + "rag" + "agent" → AI cluster)
+- Weight by: repo count mentioning term + star velocity (starsToday) + total stars
 
-Return JSON format:
+## Categorization Rules
+- "language"   → programming/scripting language (python, rust, go, typescript …)
+- "framework"  → library or framework (react, pytorch, fastapi, langchain …)
+- "domain"     → problem space (ai/ml, devops, security, web, mobile, data …)
+- "concept"    → architectural or paradigm term (rag, agent, microservice, wasm, cli …)
+
+## JSON Schema (return ONLY this, no markdown fences, no explanation)
 {
   "words": [
-    {"text": "javascript", "size": 25, "category": "language", "repos": 8, "weight": 15},
-    {"text": "react", "size": 20, "category": "framework", "repos": 6, "weight": 12},
-    {"text": "ai/ml", "size": 18, "category": "domain", "repos": 5, "weight": 10}
+    {
+      "text": string,          // lowercase, hyphenated if multi-word
+      "size": number,          // 10-30 scaled by weight
+      "category": "language" | "framework" | "domain" | "concept",
+      "repos": number,         // how many repos this term appears in
+      "weight": number         // raw weight score
+    }
   ],
   "categories": {
-    "languages": {"count": 5, "totalWeight": 45},
-    "frameworks": {"count": 8, "totalWeight": 38},
-    "domains": {"count": 4, "totalWeight": 25},
-    "concepts": {"count": 6, "totalWeight": 20}
+    "languages":  { "count": number, "totalWeight": number },
+    "frameworks": { "count": number, "totalWeight": number },
+    "domains":    { "count": number, "totalWeight": number },
+    "concepts":   { "count": number, "totalWeight": number }
   },
-  "insights": [
-    "AI/ML projects dominate with 40% of trending repos",
-    "JavaScript ecosystem remains strong with React and Node.js",
-    "Rust gaining traction in systems programming"
-  ],
+  "insights": [string],        // 3-5 analyst-grade observations, specific and data-backed
   "trends": {
-    "emerging": ["rust", "webassembly", "blockchain"],
-    "established": ["javascript", "python", "react"],
-    "rising": ["ai/ml", "devops", "microservices"]
+    "emerging":    [string],   // gaining fast, low base
+    "established": [string],   // consistently dominant
+    "rising":      [string]    // growing steadily
   }
 }
 
-Constraints:
-- Maximum 50 words total
-- Minimum word length: 3 characters
-- Size range: 10-30 (based on weight)
-- Focus on actionable, technical insights`;
+## Hard Constraints
+- words array: 20-50 entries, no duplicates
+- text: minimum 2 characters, no punctuation except hyphens
+- size: must be integer in [10, 30]
+- insights: reference actual numbers (e.g. "12 of 25 repos use Python"), no vague claims
+- Return ONLY valid JSON — no markdown, no prose, no code fences`;
 
-    const userPrompt = `Analyze these GitHub trending repositories and extract technology trends:\n\n${JSON.stringify(repoData, null, 2)}`;
+    const userPrompt = `Analyze the following ${repoData.length} GitHub trending repositories (${period} / lang filter: "${language || "all"}").
+
+${JSON.stringify(repoData, null, 2)}
+
+Return the JSON object. No markdown, no explanation.`;
 
     // Call AI API
     let apiUrl, requestBody;
@@ -746,9 +808,25 @@ Constraints:
     // Parse AI response
     let wordData;
     try {
-      wordData = JSON.parse(analysis);
+      wordData = safeParseJson(analysis);
+
+      // Validate tối thiểu
+      if (!Array.isArray(wordData?.words) || wordData.words.length === 0) {
+        throw new Error("Invalid structure: missing words array");
+      }
+
+      // Clamp size về [10, 30] phòng model trả sai range
+      wordData.words = wordData.words.map((w) => ({
+        ...w,
+        size: Math.min(30, Math.max(10, Math.round(w.size))),
+      }));
     } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
+      console.error(
+        "Failed to parse AI response:",
+        parseError,
+        "\nRaw:",
+        analysis?.slice(0, 300),
+      );
       wordData = extractBasicKeywords(stories);
     }
 
