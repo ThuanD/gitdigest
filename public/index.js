@@ -1,6 +1,6 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LS_READ_STATS = "readStats";
-const LS_READ_STORIES = "readStories";
+const LS_READ_REPOS = "readRepos";
 const LS_FEED_KIND = "gh_digest_feed_kind";
 const LS_PREF_LANG = "preferredLang";
 const LS_API_KEY = "openai_api_key"; // value kept for backward compat
@@ -88,11 +88,11 @@ function markdownToSafeHtml(md) {
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentLang = localStorage.getItem(LS_PREF_LANG) || "en";
 let activeCardId = null;
-let currentActiveStory = null;
+let currentActiveRepo = null;
 let currentPage = 1;
 let hideReadActive = false;
-let currentStories = []; // Currently displayed (may be filtered)
-let allStories = []; // All loaded stories across pages (for wordcloud)
+let currentRepos = []; // Currently displayed (may be filtered)
+let allRepos = []; // All loaded repos across pages (for wordcloud)
 let feedKind = localStorage.getItem(LS_FEED_KIND) || "daily";
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -164,9 +164,9 @@ saveKeyBtn.addEventListener("click", () => {
   if (apiKeyInput.value.trim()) {
     localStorage.setItem(LS_API_KEY, apiKeyInput.value.trim());
     settingsModal.close();
-    if (currentActiveStory && activeCardId) {
+    if (currentActiveRepo && activeCardId) {
       handleCardClick(
-        currentActiveStory,
+        currentActiveRepo,
         document.getElementById(`card-${activeCardId}`),
       );
     }
@@ -190,9 +190,9 @@ SUPPORTED_LANGUAGES.forEach((lang) => {
 langSelect.addEventListener("change", (e) => {
   currentLang = e.target.value;
   localStorage.setItem(LS_PREF_LANG, currentLang);
-  if (currentActiveStory && activeCardId) {
+  if (currentActiveRepo && activeCardId) {
     handleCardClick(
-      currentActiveStory,
+      currentActiveRepo,
       document.getElementById(`card-${activeCardId}`),
     );
   }
@@ -209,9 +209,9 @@ function syncFeedKindButtons() {
 
 function resetReaderForFeedSwitch() {
   activeCardId = null;
-  currentActiveStory = null;
+  currentActiveRepo = null;
   feedList
-    .querySelectorAll(".story-card.is-active")
+    .querySelectorAll(".repo-card.is-active")
     .forEach((el) => el.classList.remove("is-active"));
   emptyState.classList.remove("hidden");
   readerWorkspace.classList.add("hidden");
@@ -233,7 +233,7 @@ function setFeedKind(kind) {
   localStorage.setItem(LS_FEED_KIND, feedKind);
   resetReaderForFeedSwitch();
   currentPage = 1;
-  loadStoriesClient(1);
+  loadReposClient(1);
   syncFeedKindButtons();
 }
 
@@ -265,7 +265,7 @@ function createFeedSkeletonCard() {
   const el = document.createElement("div");
   el.setAttribute("data-feed-skeleton", "1");
   el.className =
-    "story-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
+    "repo-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
   el.innerHTML = `
     <div class="mb-3 space-y-2.5">
       <div class="ui-skeleton h-3.5 rounded-md" style="width:92%"></div>
@@ -338,17 +338,17 @@ function renderActivityGraph() {
 }
 
 // ─── Read state ───────────────────────────────────────────────────────────────
-function getReadStories() {
-  const a = safeJsonParse(localStorage.getItem(LS_READ_STORIES) || "[]", []);
+function getReadRepos() {
+  const a = safeJsonParse(localStorage.getItem(LS_READ_REPOS) || "[]", []);
   return Array.isArray(a) ? a : [];
 }
 
 function markAsRead(id) {
-  const read = getReadStories();
+  const read = getReadRepos();
   if (!read.some((x) => x === id)) {
     read.push(id);
     try {
-      localStorage.setItem(LS_READ_STORIES, JSON.stringify(read));
+      localStorage.setItem(LS_READ_REPOS, JSON.stringify(read));
 
       const stats = getReadStats();
       const d = new Date();
@@ -364,10 +364,10 @@ function markAsRead(id) {
 }
 
 function isRead(id) {
-  return getReadStories().some((x) => x === id);
+  return getReadRepos().some((x) => x === id);
 }
 
-function applyReadState(story, cardElement) {
+function applyReadState(repo, cardElement) {
   cardElement.classList.add("is-read");
   const icon = cardElement.querySelector(".check-icon");
   if (icon) {
@@ -375,7 +375,7 @@ function applyReadState(story, cardElement) {
     icon.classList.remove("opacity-0");
     icon.classList.add("opacity-100");
   }
-  markAsRead(story.id);
+  markAsRead(repo.id);
 }
 
 // ─── Preferences ──────────────────────────────────────────────────────────────
@@ -655,13 +655,13 @@ function processReadmeLinks(shadowRoot) {
   });
 }
 
-function getReadmeHtml(data, story) {
+function getReadmeHtml(data, repo) {
   if (data.readme_html) {
     return data.readme_html;
   }
   
   // Fallback to our own markdown parsing
-  const fullName = data.raw_api_response?.full_name || story.id;
+  const fullName = data.raw_api_response?.full_name || repo.id;
   const branch = data.raw_api_response?.default_branch || "main";
   const md = resolveReadmeImages(
     data.readme_content || "*No README available.*",
@@ -704,10 +704,9 @@ function resolveReadmeImages(markdown, fullName, defaultBranch = "main") {
     );
 }
 
-async function openSourcePanelForStory(story, persistPreference) {
-  if (!story?.id) return;
+async function openSourcePanelForRepo(repo, persistPreference) {
+  if (!repo?.id) return;
 
-  // FIX: also remove the HTML `hidden` attribute, not just the class
   sourceFramePanel.classList.remove("hidden");
   readerBody.classList.add("hidden");
   readerSourceIframeWrap.classList.remove("hidden");
@@ -717,12 +716,12 @@ async function openSourcePanelForStory(story, persistPreference) {
   if (persistPreference) setSourceOpenPreference(true);
   syncReaderViewToggleUi();
 
-  const cacheKey = story.id;
+  const cacheKey = repo.id;
   const cached = readmeCache.get(cacheKey);
   const now = Date.now();
 
   if (cached && now - cached.time < README_CACHE_TTL) {
-    renderReadmeContent(cached.data, story);
+    renderReadmeContent(cached.data, repo);
     syncReaderViewToggleUi();
     return;
   }
@@ -740,24 +739,24 @@ async function openSourcePanelForStory(story, persistPreference) {
   shadowRoot.innerHTML = loadingHtml;
 
   try {
-    const res = await fetch(`/api/repo?id=${encodeURIComponent(story.id)}`);
+    const res = await fetch(`/api/repo?repoId=${encodeURIComponent(repo.id)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
     readmeCache.set(cacheKey, { data, time: now });
-    renderReadmeContent(data, story);
+    renderReadmeContent(data, repo);
   } catch (err) {
     console.error("README load failed:", err);
-    renderReadmeError(err, story);
+    renderReadmeError(err, repo);
   }
 }
 
-function renderReadmeContent(data, story) {
+function renderReadmeContent(data, repo) {
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
   
-  const html = getReadmeHtml(data, story);
+  const html = getReadmeHtml(data, repo);
   const styles = getReadmeStyles();
   
   shadowRoot.innerHTML = styles + `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
@@ -765,7 +764,7 @@ function renderReadmeContent(data, story) {
   processReadmeLinks(shadowRoot);
 }
 
-function renderReadmeError(err, story) {
+function renderReadmeError(err, repo) {
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
   
@@ -776,16 +775,16 @@ function renderReadmeError(err, story) {
     </svg>
     <p class="error-text">Failed to load README</p>
     <p class="error-detail">${err.message}</p>
-    <a href="${story.url}" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+    <a href="${repo.url}" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
   `;
   
   shadowRoot.innerHTML = styles + content;
 }
 
 function toggleSourcePanelFromUi() {
-  if (!currentActiveStory?.id) return;
+  if (!currentActiveRepo?.id) return;
   if (!sourceFramePanel.classList.contains("hidden")) closeSourcePanel(true);
-  else void openSourcePanelForStory(currentActiveStory, true);
+  else void openSourcePanelForRepo(currentActiveRepo, true);
 }
 
 // ─── Comments / Issues panel ──────────────────────────────────────────────────
@@ -795,13 +794,13 @@ function syncCommentsButtonUi() {
   readerIssuesBtn.setAttribute("aria-pressed", open ? "true" : "false");
 }
 
-function openCommentsPanelForStory(story, persistPreference) {
-  if (!story) return;
+function openCommentsPanelForRepo(repo, persistPreference) {
+  if (!repo) return;
   commentsPane.classList.remove("hidden");
   commentsPane.classList.add("flex");
   if (window.innerWidth < 768) commentsBackdrop.classList.remove("hidden");
-  commentsExternalLink.href = `${story.url}/issues`;
-  loadGitHubIssues(story.id, commentsBody);
+  commentsExternalLink.href = `${repo.url}/issues`;
+  loadGitHubIssues(repo.id, commentsBody);
   if (persistPreference) setCommentsOpenPreference(true);
   syncCommentsButtonUi();
 }
@@ -833,7 +832,7 @@ async function loadGitHubIssues(repoId, container) {
       return;
     }
 
-    const issuesRes = await fetch(`/api/issues?owner=${owner}&repo=${repo}`);
+    const issuesRes = await fetch(`/api/issues?repoId=${repoId}`);
     if (!issuesRes.ok)
       throw new Error(`Failed to fetch issues: ${issuesRes.status}`);
 
@@ -911,7 +910,7 @@ async function loadGitHubIssues(repoId, container) {
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
 function visibleFeedCards() {
   return Array.from(
-    feedList.querySelectorAll(".story-card[id^='card-']"),
+    feedList.querySelectorAll(".repo-card[id^='card-']"),
   ).filter((el) => el.offsetParent !== null);
 }
 
@@ -940,15 +939,15 @@ function navigateFeedByArrow(delta) {
 }
 
 function toggleCommentsKeyboard() {
-  if (!currentActiveStory) return;
+  if (!currentActiveRepo) return;
   if (!commentsPane.classList.contains("hidden")) closeCommentsPanel(true);
-  else openCommentsPanelForStory(currentActiveStory, true);
+  else openCommentsPanelForRepo(currentActiveRepo, true);
 }
 
-function openCurrentStoryInNewTab() {
-  if (!currentActiveStory?.url) return;
+function openCurrentRepoInNewTab() {
+  if (!currentActiveRepo?.url) return;
   try {
-    const u = new URL(currentActiveStory.url);
+    const u = new URL(currentActiveRepo.url);
     if (u.protocol === "http:" || u.protocol === "https:") {
       window.open(u.href, "_blank", "noopener,noreferrer");
     }
@@ -1004,7 +1003,7 @@ document.addEventListener("keydown", (e) => {
     !e.metaKey &&
     !e.altKey
   ) {
-    if (!currentActiveStory?.url) return;
+    if (!currentActiveRepo?.url) return;
     e.preventDefault();
     toggleSourcePanelFromUi();
     return;
@@ -1015,30 +1014,30 @@ document.addEventListener("keydown", (e) => {
     !e.metaKey &&
     !e.altKey
   ) {
-    if (!currentActiveStory?.url) return;
+    if (!currentActiveRepo?.url) return;
     e.preventDefault();
-    openCurrentStoryInNewTab();
+    openCurrentRepoInNewTab();
   }
 });
 
 // ─── View toggle buttons ──────────────────────────────────────────────────────
 readerViewSummaryBtn.addEventListener("click", async () => {
-  if (!currentActiveStory?.url) return;
+  if (!currentActiveRepo?.url) return;
   if (!sourceFramePanel.classList.contains("hidden")) {
     closeSourcePanel(true);
-    await loadSummaryForStory(currentActiveStory);
+    await loadSummaryForRepo(currentActiveRepo);
   }
 });
 
 readerViewSourceBtn.addEventListener("click", () => {
-  if (!currentActiveStory?.url) return;
+  if (!currentActiveRepo?.url) return;
   if (sourceFramePanel.classList.contains("hidden")) {
-    void openSourcePanelForStory(currentActiveStory, true);
+    void openSourcePanelForRepo(currentActiveRepo, true);
   }
 });
 
 readerIssuesBtn.addEventListener("click", () => {
-  if (!currentActiveStory) return;
+  if (!currentActiveRepo) return;
   toggleCommentsKeyboard();
 });
 
@@ -1053,11 +1052,11 @@ mobileBackBtn.addEventListener("click", () => {
 // ─── Load more ────────────────────────────────────────────────────────────────
 loadMoreBtn.addEventListener("click", () => {
   currentPage++;
-  loadStoriesClient(currentPage);
+  loadReposClient(currentPage);
 });
 
-// ─── Stories loader (FIXED: pagination now actually fetches for all pages) ────
-async function loadStoriesClient(page = 1) {
+// ─── Repos loader ────
+async function loadReposClient(page = 1) {
   loadMoreBtn.disabled = true;
   loadMoreBtn.innerHTML = `${SPINNER_SVG}<span>Loading…</span>`;
 
@@ -1074,14 +1073,15 @@ async function loadStoriesClient(page = 1) {
   }
 
   try {
-    const res = await fetch(`/api/stories?period=${feedKind}&page=${page}`);
+    const res = await fetch(`/api/repos?period=${feedKind}&page=${page}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
     feedList
       .querySelectorAll("[data-feed-skeleton]")
       .forEach((el) => el.remove());
-    renderStoriesFromIds(data.stories || [], page);
+    renderReposFromIds(data.repos || [], page);
 
     if (data.hasMore) {
       loadMoreBtn.classList.remove("hidden");
@@ -1096,7 +1096,7 @@ async function loadStoriesClient(page = 1) {
       statusTextEl.textContent = "Live";
     }
   } catch (e) {
-    console.error("Load stories error:", e);
+    console.error("Load repos error:", e);
 
     // Remove loading status
     statusDot.classList.remove("animate-pulse");
@@ -1120,73 +1120,73 @@ async function loadStoriesClient(page = 1) {
   }
 }
 
-// Extracted from loadStoriesClient so pagination can call it correctly
-function renderStoriesFromIds(stories, page = 1) {
+// Extracted from loadReposClient so pagination can call it correctly
+function renderReposFromIds(repos, page = 1) {
   if (page === 1) {
-    allStories = stories;
+    allRepos = repos;
   } else {
-    allStories = [...allStories, ...stories];
+    allRepos = [...allRepos, ...repos];
   }
-  currentStories = allStories;
+  currentRepos = allRepos;
   feedList.innerHTML = "";
 
   const frag = document.createDocumentFragment();
-  stories.forEach((story, i) => {
+  repos.forEach((repo, i) => {
     const card = document.createElement("div");
     card.style.animationDelay = `${i * 20}ms`;
-    card.id = `card-${story.id}`;
+    card.id = `card-${repo.id}`;
 
-    const readClass = isRead(story.id) ? "is-read" : "";
-    const activeClass = activeCardId === story.id ? "is-active" : "";
-    card.className = `story-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
+    const readClass = isRead(repo.id) ? "is-read" : "";
+    const activeClass = activeCardId === repo.id ? "is-active" : "";
+    card.className = `repo-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
 
     let scoreColor = "text-textMuted";
-    if (story.score > 500) scoreColor = "text-hn";
-    else if (story.score > 100) scoreColor = "text-amber-500";
+    if (repo.stars > 500) scoreColor = "text-hn";
+    else if (repo.stars > 100) scoreColor = "text-amber-500";
 
-    const titleSafe = escapeHtml(story.title);
+    const titleSafe = escapeHtml(repo.fullName);
 
     card.innerHTML = `
       <div class="flex justify-between items-start mb-3">
         <h3 class="font-medium text-[14px] leading-snug text-textMain group-hover:text-white transition-colors pr-2">${titleSafe}</h3>
-        <div class="check-icon ${activeCardId === story.id ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
+        <div class="check-icon ${activeCardId === repo.id ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
         </div>
       </div>
-      <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(story.description || "")}</div>
+      <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(repo.description || "")}</div>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3 text-xs">
           <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-label="star">
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
             </svg>
-            <span class="${scoreColor}">${story.score}</span>
+            <span class="${scoreColor}">${repo.stars}</span>
           </div>
           ${
-            story.language
+            repo.language
               ? `
           <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="programming language">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
             </svg>
-            <span class="font-mono">${escapeHtml(story.language)}</span>
+            <span class="font-mono">${escapeHtml(repo.language)}</span>
           </div>`
               : ""
           }
           <div class="flex items-center gap-1.5 text-textMuted/70">
-            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="fork">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
             </svg>
-            <span class="font-mono">${story.forks ?? 0}</span>
+            <span class="font-mono">${repo.forks ?? 0}</span>
           </div>
         </div>
         <span class="text-xs text-textMuted font-mono">github.com</span>
       </div>`;
 
-    card.addEventListener("click", () => handleCardClick(story, card));
+    card.addEventListener("click", () => handleCardClick(repo, card));
     frag.appendChild(card);
   });
   feedList.appendChild(frag);
@@ -1208,13 +1208,13 @@ function applyBlankTargets(root) {
 }
 
 // ─── Card click / reader ──────────────────────────────────────────────────────
-async function handleCardClick(story, cardElement) {
+async function handleCardClick(repo, cardElement) {
   if (activeCardId) {
     const oldCard = document.getElementById(`card-${activeCardId}`);
     if (oldCard) oldCard.classList.remove("is-active");
   }
-  activeCardId = story.id;
-  currentActiveStory = story;
+  activeCardId = repo.id;
+  currentActiveRepo = repo;
   cardElement.classList.add("is-active");
 
   if (window.innerWidth < 768) {
@@ -1230,7 +1230,7 @@ async function handleCardClick(story, cardElement) {
   readerContent.classList.add("flex", "flex-col");
 
   if (getCommentsOpenPreference()) {
-    openCommentsPanelForStory(story, false);
+    openCommentsPanelForRepo(repo, false);
   } else {
     closeCommentsPanel(false);
   }
@@ -1239,16 +1239,16 @@ async function handleCardClick(story, cardElement) {
   setReaderViewToggleVisible(false);
 
   readerBody.classList.remove("animate-reader-in", "opacity-50");
-  readerTitle.textContent = story.title;
+  readerTitle.textContent = repo.title;
   readerBody.innerHTML = "";
 
   let sourceUrlOk = false;
-  let sourceHrefForStory = "";
-  if (story.url) {
+  let sourceHrefForRepo = "";
+  if (repo.url) {
     try {
-      const u = new URL(story.url);
+      const u = new URL(repo.url);
       if (u.protocol === "http:" || u.protocol === "https:") {
-        sourceHrefForStory = u.href;
+        sourceHrefForRepo = u.href;
         sourceUrlOk = true;
       }
     } catch {
@@ -1257,12 +1257,12 @@ async function handleCardClick(story, cardElement) {
   }
 
   if (sourceUrlOk) {
-    readerTitleSourceLink.href = sourceHrefForStory;
-    readerTitleSourceLink.textContent = sourceHrefForStory;
+    readerTitleSourceLink.href = sourceHrefForRepo;
+    readerTitleSourceLink.textContent = sourceHrefForRepo;
     readerTitleSourceLink.classList.remove("hidden");
     setReaderViewToggleVisible(true);
     if (getSourceOpenPreference()) {
-      await openSourcePanelForStory(story, false);
+      await openSourcePanelForRepo(repo, false);
     } else {
       syncReaderViewToggleUi();
     }
@@ -1274,23 +1274,23 @@ async function handleCardClick(story, cardElement) {
 
   // Show Issues toggle button (only load when panel is actually opened)
   readerCommentsToggleWrap.classList.remove("hidden");
-  commentsExternalLink.href = `${story.url}/issues`;
+  commentsExternalLink.href = `${repo.url}/issues`;
 
   readerContent.scrollTop = 0;
 
   // Load content based on user preference
   if (getSourceOpenPreference()) {
     // User prefers source - go directly to source panel
-    await openSourcePanelForStory(story, false);
+    await openSourcePanelForRepo(repo, false);
   } else {
     // User prefers summary - load summary
-    await loadSummaryForStory(story);
+    await loadSummaryForRepo(repo);
   }
 }
 
 // ─── Summary loader ───────────────────────────────────────────────────────────
-async function loadSummaryForStory(story) {
-  const localCacheKey = `summary_${story.id}_${currentLang}`;
+async function loadSummaryForRepo(repo) {
+  const localCacheKey = `summary_${repo.id}_${currentLang}`;
   const browserCachedSummary = localStorage.getItem(localCacheKey);
 
   if (browserCachedSummary) {
@@ -1302,8 +1302,8 @@ async function loadSummaryForStory(story) {
     readerBody.classList.add("animate-reader-in");
 
     // Mark as read when loading from cache too
-    const activeCard = document.getElementById(`card-${story.id}`);
-    if (activeCard) applyReadState(story, activeCard);
+    const activeCard = document.getElementById(`card-${repo.id}`);
+    if (activeCard) applyReadState(repo, activeCard);
 
     return;
   }
@@ -1319,7 +1319,7 @@ async function loadSummaryForStory(story) {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const res = await fetch(
-      `/api/summarize?id=${encodeURIComponent(story.id)}&lang=${encodeURIComponent(currentLang)}`,
+      `/api/summarize?id=${encodeURIComponent(repo.id)}&lang=${encodeURIComponent(currentLang)}`,
       { headers },
     );
     const data = await res.json().catch(() => ({}));
@@ -1362,8 +1362,8 @@ async function loadSummaryForStory(story) {
       /* storage full */
     }
 
-    const activeCard = document.getElementById(`card-${story.id}`);
-    if (activeCard) applyReadState(story, activeCard);
+    const activeCard = document.getElementById(`card-${repo.id}`);
+    if (activeCard) applyReadState(repo, activeCard);
   } catch (err) {
     console.error(err);
     readerBody.classList.remove("opacity-50");
@@ -1388,7 +1388,7 @@ wordcloudBtn.addEventListener("click", () => {
 });
 
 wordcloudClearBtn.addEventListener("click", () => {
-  renderStoriesFromIds(allStories, 1);
+  renderReposFromIds(allRepos, 1);
   statusTextEl.textContent = "Live";
   wordcloudClearBtn.disabled = true;
 });
@@ -1566,9 +1566,9 @@ function renderWordCloudInsights(data) {
 }
 
 function handleWordCloudClick(word) {
-  const pool = allStories.length > 0 ? allStories : currentStories;
+  const pool = allRepos.length > 0 ? allRepos : currentRepos;
   const lw = word.toLowerCase();
-  const filteredStories = pool.filter(
+  const filteredRepos = pool.filter(
     (s) =>
       s.description?.toLowerCase().includes(lw) ||
       s.language?.toLowerCase().includes(lw) ||
@@ -1577,15 +1577,15 @@ function handleWordCloudClick(word) {
 
   wordcloudModal.close();
 
-  if (filteredStories.length === 0) return;
+  if (filteredRepos.length === 0) return;
 
-  const savedAll = allStories;
-  renderStoriesFromIds(filteredStories, 1);
-  allStories = savedAll;
+  const savedAll = allRepos;
+  renderReposFromIds(filteredRepos, 1);
+  allRepos = savedAll;
 
   wordcloudClearBtn.disabled = false;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 renderActivityGraph();
-loadStoriesClient();
+loadReposClient();

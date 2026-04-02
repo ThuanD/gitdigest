@@ -54,7 +54,7 @@ A small web app that lists trending GitHub repositories and generates AI summari
 
 Routes are implemented in `worker.js`:
 
-- `GET /api/stories?page=1&period=daily&lang=javascript` — Paginated trending repositories from GitHub API (cached ~15 minutes in memory). Period: daily/weekly/monthly.
+- `GET /api/repos?page=1&period=daily&lang=javascript` — Paginated trending repositories from GitHub API (cached ~15 minutes in memory). Period: daily/weekly/monthly.
 - `GET /api/repo?id=<repoId>` — Fetches repository details and README content.
 - `GET /api/summarize?id=<repoId>&lang=<iso>` — Generates a cached AI summary of the repository; `lang` defaults to `en`. Send `Authorization: Bearer <API key>` (OpenAI `sk-...`, Groq `gsk_...`, or Gemini `AIza...`) and/or set the `OPENAI_API_KEY` secret / `.dev.vars`.
 

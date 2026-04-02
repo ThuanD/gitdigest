@@ -10,6 +10,10 @@ const summaryCache = new Map();
 const repoCache = new Map();
 const wordcloudCache = new Map();
 
+// ─── Custom exception ────────────────────────────────────────────── 
+class RateLimitError extends Error {}
+class NotFoundError extends Error {}
+
 // ─── Utility Functions Module ────────────────────────────────────────────────────
 /**
  * General utility functions and data transformations
@@ -83,6 +87,28 @@ function safeParseJson(raw) {
  * Convert between different data formats and APIs
  */
 
+function mapTrendingRepository(repo) {
+  const parseNum = (str = "") =>
+    parseInt((str || "").replace(/,/g, "").trim(), 10) || 0;
+
+  const starsToday = parseNum(
+    (repo._todayRaw || "").replace(/stars today/i, "").trim(),
+  );
+
+  return {
+    id: repo.fullName,
+    fullName: repo.fullName,
+    url: repo.url,
+    name: repo.name,
+    owner: repo.owner,
+    description: repo.description.trim(),
+    language: repo.language.trim(),
+    stars: parseNum(repo._starsRaw),
+    forks: parseNum(repo._forksRaw),
+    starsToday,
+  };
+}
+
 function mapGitHubRepo(repo) {
   return {
     id: repo.id,
@@ -102,27 +128,15 @@ function mapGitHubRepo(repo) {
   };
 }
 
-function mapStoryFromRepo(repo) {
-  const parseNum = (str = "") =>
-    parseInt((str || "").replace(/,/g, "").trim(), 10) || 0;
-
-  const starsToday = parseNum(
-    (repo._todayRaw || "").replace(/stars today/i, "").trim(),
-  );
-
+function mapRepoIssue(issue) {
   return {
-    id: repo.fullName,
-    title: repo.fullName,
-    url: repo.url,
-    score: starsToday,
-    by: repo.owner,
-    name: repo.name,
-    owner: repo.owner,
-    description: repo.description.trim(),
-    language: repo.language.trim(),
-    stars: parseNum(repo._starsRaw),
-    forks: parseNum(repo._forksRaw),
-    starsToday,
+    labels: issue.labels,
+    html_url: issue.html_url,
+    number: issue.number,
+    user: issue.user,
+    comments: issue.comments,
+    state: issue.state,
+    created_at: issue.created_at,
   };
 }
 
@@ -140,14 +154,15 @@ async function parseTrendingPage(response) {
     .on("article.Box-row", {
       element() {
         current = {
-          name: "",
           fullName: "",
+          name: "",
+          owner: "",
+          url: "",
           description: "",
           language: "",
           stars: 0,
           forks: 0,
           starsToday: 0,
-          url: "",
         };
         repos.push(current);
       },
@@ -190,13 +205,13 @@ async function parseTrendingPage(response) {
     .on("article.Box-row .d-inline-block.float-sm-right", {
       text(chunk) {
         if (!current) return;
-        current._todayRaw = (current._todayRaw || "") + chunk.text;
+        current._starsTodayRaw = (current._starsTodayRaw || "") + chunk.text;
       },
     });
 
   await rewriter.transform(response).arrayBuffer();
 
-  return repos.map(mapStoryFromRepo);
+  return repos.map(mapTrendingRepository);
 }
 
 async function fetchTrendingRepos(period, language, env) {
@@ -224,6 +239,11 @@ async function fetchTrendingRepos(period, language, env) {
     if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
 
     repos = await parseTrendingPage(res);
+    if (!repos || repos.length === 0) {
+      throw new Error(
+        "Parsed 0 repos — GitHub HTML structure may have changed",
+      );
+    }
     listIdCaches.set(cacheKey, { time: Date.now(), repos });
   }
 
@@ -231,47 +251,57 @@ async function fetchTrendingRepos(period, language, env) {
 }
 
 async function fetchGitHubRepo(repoId, env) {
-  const cached = repoCache.get(repoId);
+  try {
+    const cached = repoCache.get(repoId);
 
-  if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
-    return { repo: cached.repo, isCached: true };
-  }
-
-  const [owner, repoName] = repoId.split("/");
-  const repoUrl = `https://api.github.com/repos/${owner}/${repoName}`;
-
-  const repoRes = await fetch(repoUrl, {
-    headers: {
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "Github-Trending-Digest-Worker",
-      ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-    },
-  });
-
-  if (!repoRes.ok) {
-    if (repoRes.status === 403) {
-      const errorData = await repoRes.json().catch(() => ({}));
-      if (errorData.message?.includes("rate limit")) {
-        return json(
-          {
-            error: "GitHub API rate limit exceeded. Please try again later.",
-          },
-          429,
-        );
-      }
+    if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
+      return { repo: cached.repo, isCached: true };
     }
-    throw new Error(`GitHub API error: ${repoRes.status}`);
+
+    const repoUrl = `https://api.github.com/repos/${repoId}`;
+    const response = await fetch(repoUrl, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Github-Trending-Digest-Worker",
+        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.message?.includes("rate limit")) {
+          throw new RateLimitError("GitHub API rate limit exceeded");
+        }
+      }
+      if (response.status === 404) {
+        throw new NotFoundError("Repository not found");
+      }
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+
+    const repo = await response.json();
+    repoCacheSet(repoId, { repo: repo, time: Date.now() });
+
+    return { repo: repo, isCached: false };
+  } catch (error) {
+    console.error("Failed to load GitHub repo:", error);
+    return [];
   }
-
-  const repo = await repoRes.json();
-  repoCacheSet(repoId, { data: repo, time: Date.now() });
-
-  return { repo: repo, isCached: false };
 }
 
-async function fetchGitHubIssues(owner, repo, env) {
+async function fetchGitHubIssues(repoId, env) {
   try {
-    const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&sort=created&direction=desc&per_page=25`;
+    let isRepoCached = false;
+    const cached = repoCache.get(repoId);
+    if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
+      if (cached.issues) {
+        return { issues: cached.issues, isCached: true };
+      }
+      isRepoCached = true;
+    }
+
+    const issuesUrl = `https://api.github.com/repos/${repoId}/issues?state=open&sort=created&direction=desc&per_page=25`;
     const response = await fetch(issuesUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
@@ -281,23 +311,25 @@ async function fetchGitHubIssues(owner, repo, env) {
     });
 
     if (!response.ok) {
-      if (response.status === 404)
-        return json({ error: "Repository not found or no issues" }, 404);
+      if (response.status === 403) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.message?.includes("rate limit")) {
+          throw new RateLimitError("GitHub API rate limit exceeded");
+        }
+      }
+      if (response.status === 404) {
+        throw new NotFoundError("Repository not found or no issues");
+      }
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
     const issues = await response.json();
-    // return issues.map((issue) => ({
-    //   id: issue.id,
-    //   title: issue.title,
-    //   url: issue.html_url,
-    //   state: issue.state,
-    //   created_at: issue.created_at,
-    //   user: issue.user.login,
-    //   labels: issue.labels?.map((label) => label.name) || [],
-    //   comments: issue.comments,
-    // }));
-    return issues;
+    const issueData = issues.map(mapRepoIssue);
+
+    if (isRepoCached) {
+      repoCacheSet(repoId, { ...cached, issues: issueData });
+    }
+    return issueData;
   } catch (error) {
     console.error("Failed to load GitHub issues:", error);
     return [];
@@ -639,7 +671,7 @@ async function callOpenAI(systemPrompt, userPrompt, env, apiKey) {
  * Request validation, response formatting, and error handling
  */
 
-async function handleStories(request, url, env) {
+async function handleRepos(request, url, env) {
   try {
     const period = url.searchParams.get("period") || "daily";
     const language = url.searchParams.get("lang") || "";
@@ -651,7 +683,7 @@ async function handleStories(request, url, env) {
     const pageRepos = repos.slice(startIndex, startIndex + limit);
 
     return json({
-      stories: pageRepos,
+      repos: pageRepos,
       hasMore: startIndex + limit < repos.length,
       feed: period,
     });
@@ -663,8 +695,10 @@ async function handleStories(request, url, env) {
 
 async function handleRepoDetails(request, url, env) {
   try {
-    const repoId = url.searchParams.get("id");
-    if (!repoId) return json({ error: "Missing repository ID" }, 400);
+    const repoId = url.searchParams.get("repoId");
+    if (!repoId) {
+      return json({ error: "Missing repository ID" }, 400);
+    }
 
     const { repo, isCached } = await fetchGitHubRepo(repoId, env);
 
@@ -682,6 +716,11 @@ async function handleRepoDetails(request, url, env) {
     repoCacheSet(repoId, { t: Date.now(), result });
     return json(result);
   } catch (error) {
+    if (error instanceof NotFoundError)
+      return json({ error: error.message }, 404);
+    if (error instanceof RateLimitError)
+      return json({ error: error.message }, 429);
+
     console.error("Repo details fetch error:", error);
     return json({ error: "Failed to fetch repository details" }, 500);
   }
@@ -689,16 +728,16 @@ async function handleRepoDetails(request, url, env) {
 
 async function handleGitHubIssues(request, url, env) {
   try {
-    const owner = url.searchParams.get("owner");
-    const repo = url.searchParams.get("repo");
-    if (!owner || !repo)
-      return json({ error: "Missing owner or repo parameters" }, 400);
+    const repoId = url.searchParams.get("repoId");
+    if (!repoId) {
+      return json({ error: "Missing repository ID" }, 400);
+    }
 
-    const issues = await fetchGitHubIssues(owner, repo, env);
+    const issues = await fetchGitHubIssues(repoId, env);
 
     return json({
       issues,
-      repo_url: `https://github.com/${owner}/${repo}`,
+      repo_url: `https://github.com/${repoId}`,
       count: issues.length,
     });
   } catch (error) {
@@ -881,7 +920,7 @@ async function handleWordCloud(request, url, env) {
       return json({ ...cached.data, cached: true });
     }
 
-    // Get trending stories (reuse existing logic)
+    // Get trending repos (reuse existing logic)
     const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
     const since = sinceMap[period] || "daily";
 
@@ -896,20 +935,20 @@ async function handleWordCloud(request, url, env) {
 
     if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
 
-    const stories = await parseTrendingPage(res);
+    const repos = await parseTrendingPage(res);
 
     // AI Analysis for wordcloud
     const apiKey =
       openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
     if (!apiKey) {
       // Fallback: Simple keyword extraction without AI
-      const wordData = extractBasicKeywords(stories);
+      const wordData = extractBasicKeywords(repos);
       wordcloudCacheSet(cacheKey, wordData);
       return json(wordData);
     }
 
     // Prepare data for AI analysis
-    const repoData = stories.map((repo) => ({
+    const repoData = repos.map((repo) => ({
       name: repo.name,
       fullName: repo.fullName,
       description: repo.description,
@@ -1050,7 +1089,7 @@ Return the JSON object. No markdown, no explanation.`;
         "\nRaw:",
         analysis?.slice(0, 300),
       );
-      wordData = extractBasicKeywords(stories);
+      wordData = extractBasicKeywords(repos);
     }
 
     // Cache the result
@@ -1125,15 +1164,15 @@ const STOPWORDS = new Set([
   "over",
 ]);
 
-function extractBasicKeywords(stories) {
+function extractBasicKeywords(repos) {
   const wordMap = new Map(); // text → { weight, category }
   let langCount = 0,
     fwCount = 0,
     conceptCount = 0;
 
-  stories.forEach((story) => {
-    if (story.language) {
-      const lang = story.language.toLowerCase();
+  repos.forEach((repo) => {
+    if (repo.language) {
+      const lang = repo.language.toLowerCase();
       const e = wordMap.get(lang) || { weight: 0, category: "language" };
       e.weight += 3;
       wordMap.set(lang, e);
@@ -1141,9 +1180,9 @@ function extractBasicKeywords(stories) {
     }
 
     const text = (
-      (story.description || "") +
+      (repo.description || "") +
       " " +
-      (story.name || "")
+      (repo.name || "")
     ).toLowerCase();
     text.split(/[\s\-_/]+/).forEach((raw) => {
       const word = raw.replace(/[^a-z0-9.#+]/g, "");
@@ -1186,7 +1225,7 @@ function extractBasicKeywords(stories) {
     .map((w) => w.text);
 
   const insights = [
-    `${stories.length} repositories analyzed`,
+    `${repos.length} repositories analyzed`,
     topLangs.length
       ? `Top languages: ${topLangs.slice(0, 3).join(", ")}`
       : null,
@@ -1231,8 +1270,8 @@ export default {
 
     // Route handling
     try {
-      if (url.pathname === "/api/stories") {
-        return await handleStories(request, url, env);
+      if (url.pathname === "/api/repos") {
+        return await handleRepos(request, url, env);
       }
 
       if (url.pathname === "/api/repo") {

@@ -85,15 +85,15 @@ body {
   background: #09090b;
 }
 
-/* ── Story cards ─────────────────────────────────────────────────────────── */
-.story-card {
+/* ── Repo cards ─────────────────────────────────────────────────────────── */
+.repo-card {
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
     opacity 0.2s ease,
     box-shadow 0.2s ease;
 }
-.story-card.is-read {
+.repo-card.is-read {
   opacity: 1;
   background-color: rgba(24, 24, 27, 0.92);
   border-color: rgba(212, 212, 216, 0.11);
@@ -105,7 +105,7 @@ body {
     transparent 15px
   );
 }
-.story-card.is-read:hover {
+.repo-card.is-read:hover {
   border-color: rgba(228, 228, 231, 0.16);
   background-color: rgba(28, 28, 31, 0.96);
   background-image: repeating-linear-gradient(
@@ -122,7 +122,7 @@ body {
   background-image: none !important;
   opacity: 1 !important;
 }
-body.hide-read-active .story-card.is-read {
+body.hide-read-active .repo-card.is-read {
   display: none !important;
 }
 
