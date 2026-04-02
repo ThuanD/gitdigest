@@ -1,3 +1,4 @@
+// ─── Constants & Cache Configuration ──────────────────────────────────────────────
 const LIST_CACHE_TTL = 30 * 60 * 1000;
 const SUMMARY_CACHE_MAX = 500; // max entries (was mistakenly set to TTL ms)
 const REPO_CACHE_MAX = 200; // max entries (was mistakenly set to TTL ms)
@@ -8,6 +9,12 @@ const listIdCaches = new Map(); // key: "period-language" — was plain object, 
 const summaryCache = new Map();
 const repoCache = new Map();
 const wordcloudCache = new Map();
+
+// ─── Utility Functions Module ────────────────────────────────────────────────────
+/**
+ * General utility functions and data transformations
+ * Reusable helpers across the application
+ */
 
 function corsHeaders() {
   return {
@@ -59,54 +66,71 @@ function wordcloudCacheSet(key, value) {
   wordcloudCache.set(key, { data: value, time: Date.now() });
 }
 
-async function handleStories(url) {
-  try {
-    const period = url.searchParams.get("period") || "daily";
-    const language = url.searchParams.get("lang") || "";
-    const page = parseInt(url.searchParams.get("page") || "1", 10) || 1;
-    const limit = 15;
-
-    const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
-    const since = sinceMap[period] || "daily";
-
-    const cacheKey = `${period}-${language}`;
-    const cached = listIdCaches.get(cacheKey);
-    let repos = cached?.repos;
-
-    if (
-      !repos ||
-      repos.length === 0 ||
-      Date.now() - (cached?.time ?? 0) > LIST_CACHE_TTL
-    ) {
-      const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
-
-      const res = await fetch(trendingUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
-          Accept: "text/html",
-        },
-      });
-
-      if (!res.ok)
-        throw new Error(`GitHub trending fetch failed: ${res.status}`);
-
-      repos = await parseTrendingPage(res);
-      listIdCaches.set(cacheKey, { time: Date.now(), repos });
-    }
-
-    const startIndex = (page - 1) * limit;
-    const pageRepos = repos.slice(startIndex, startIndex + limit);
-
-    return json({
-      stories: pageRepos,
-      hasMore: startIndex + limit < repos.length,
-      feed: period,
-    });
-  } catch (error) {
-    console.error("Trending fetch error:", error);
-    return json({ error: "Failed to fetch trending repositories" }, 500);
-  }
+function safeParseJson(raw) {
+  if (!raw) return null;
+  // Strip ```json ... ``` or ``` ... ```
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  return JSON.parse(stripped);
 }
+
+// ─── Data Mapping Module ────────────────────────────────────────────────────────
+/**
+ * Data transformation utilities
+ * Convert between different data formats and APIs
+ */
+
+function mapGitHubRepo(repo) {
+  return {
+    id: repo.id,
+    title: repo.full_name,
+    url: repo.html_url,
+    score: repo.stargazers_count,
+    by: repo.owner.login,
+    time: Math.floor(new Date(repo.created_at).getTime() / 1000),
+    description: repo.description,
+    language: repo.language,
+    topics: repo.topics || [],
+    forks: repo.forks_count,
+    readme_url: `${repo.html_url}/blob/main/README.md`,
+    repo_url: repo.html_url,
+    api_url: repo.url,
+    owner_avatar: repo.owner.avatar_url,
+  };
+}
+
+function mapStoryFromRepo(repo) {
+  const parseNum = (str = "") =>
+    parseInt((str || "").replace(/,/g, "").trim(), 10) || 0;
+
+  const starsToday = parseNum(
+    (repo._todayRaw || "").replace(/stars today/i, "").trim(),
+  );
+
+  return {
+    id: repo.fullName,
+    title: repo.fullName,
+    url: repo.url,
+    score: starsToday,
+    by: repo.owner,
+    name: repo.name,
+    owner: repo.owner,
+    description: repo.description.trim(),
+    language: repo.language.trim(),
+    stars: parseNum(repo._starsRaw),
+    forks: parseNum(repo._forksRaw),
+    starsToday,
+  };
+}
+
+// ─── GitHub API Module ────────────────────────────────────────────────────────
+/**
+ * GitHub API integration utilities
+ * Centralized GitHub API calls with error handling
+ */
 
 async function parseTrendingPage(response) {
   const repos = [];
@@ -172,30 +196,127 @@ async function parseTrendingPage(response) {
 
   await rewriter.transform(response).arrayBuffer();
 
-  return repos.map((repo) => {
-    const parseNum = (str = "") =>
-      parseInt((str || "").replace(/,/g, "").trim(), 10) || 0;
+  return repos.map(mapStoryFromRepo);
+}
 
-    const starsToday = parseNum(
-      (repo._todayRaw || "").replace(/stars today/i, "").trim(),
-    );
-    const forks = parseNum(repo._forksRaw);
+async function fetchTrendingRepos(period, language, env) {
+  const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
+  const since = sinceMap[period] || "daily";
+  const cacheKey = `${period}-${language}`;
 
-    return {
-      id: repo.fullName,
-      title: repo.fullName,
-      name: repo.name,
-      owner: repo.owner,
-      description: repo.description.trim(),
-      language: repo.language.trim(),
-      stars: parseNum(repo._starsRaw),
-      forks,
-      starsToday,
-      url: repo.url,
-      by: repo.owner,
-      score: starsToday,
-    };
+  const cached = listIdCaches.get(cacheKey);
+  let repos = cached?.repos;
+
+  if (
+    !repos ||
+    repos.length === 0 ||
+    Date.now() - (cached?.time ?? 0) > LIST_CACHE_TTL
+  ) {
+    const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
+
+    const res = await fetch(trendingUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
+        Accept: "text/html",
+      },
+    });
+
+    if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
+
+    repos = await parseTrendingPage(res);
+    listIdCaches.set(cacheKey, { time: Date.now(), repos });
+  }
+
+  return repos;
+}
+
+async function fetchGitHubRepo(repoId, env) {
+  const cached = repoCache.get(repoId);
+
+  if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
+    return { repo: cached.repo, isCached: true };
+  }
+
+  const [owner, repoName] = repoId.split("/");
+  const repoUrl = `https://api.github.com/repos/${owner}/${repoName}`;
+
+  const repoRes = await fetch(repoUrl, {
+    headers: {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "Github-Trending-Digest-Worker",
+      ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+    },
   });
+
+  if (!repoRes.ok) {
+    if (repoRes.status === 403) {
+      const errorData = await repoRes.json().catch(() => ({}));
+      if (errorData.message?.includes("rate limit")) {
+        return json(
+          {
+            error: "GitHub API rate limit exceeded. Please try again later.",
+          },
+          429,
+        );
+      }
+    }
+    throw new Error(`GitHub API error: ${repoRes.status}`);
+  }
+
+  const repo = await repoRes.json();
+  repoCacheSet(repoId, { data: repo, time: Date.now() });
+
+  return { repo: repo, isCached: false };
+}
+
+async function fetchGitHubIssues(owner, repo, env) {
+  try {
+    const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&sort=created&direction=desc&per_page=25`;
+    const response = await fetch(issuesUrl, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Github-Trending-Digest-Worker",
+        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404)
+        return json({ error: "Repository not found or no issues" }, 404);
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+
+    const issues = await response.json();
+    // return issues.map((issue) => ({
+    //   id: issue.id,
+    //   title: issue.title,
+    //   url: issue.html_url,
+    //   state: issue.state,
+    //   created_at: issue.created_at,
+    //   user: issue.user.login,
+    //   labels: issue.labels?.map((label) => label.name) || [],
+    //   comments: issue.comments,
+    // }));
+    return issues;
+  } catch (error) {
+    console.error("Failed to load GitHub issues:", error);
+    return [];
+  }
+}
+
+// ─── README Processing Module ──────────────────────────────────────────────────
+/**
+ * README content processing and rendering utilities
+ * Handles GitHub markdown API, media URL resolution, and content sanitization
+ */
+
+function decodeBase64(base64) {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 function resolveMediaUrls(html, fullName, defaultBranch = "main") {
@@ -349,53 +470,249 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
   return { readmeContent, readmeHtml };
 }
 
-// ─── Utility Functions ─────────────────────────────────────────────────────────────
-function decodeBase64(base64) {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+// ─── AI/LLM Processing Module ───────────────────────────────────────────────────
+/**
+ * AI service integration and prompt engineering
+ * Handles OpenAI API calls and response processing
+ */
+
+function buildSummarizePrompt(content, lang, repo) {
+  const systemPrompt = `You are a senior software engineer and technical writer reviewing GitHub repositories for a developer audience.
+
+## Output Language
+Write the ENTIRE response in the language matching ISO code: '${lang}' — including all headings, labels, bullet points, and prose.
+
+## Response Structure (use this exact order)
+### 🔍 Overview
+One concise paragraph: what the project is, its core purpose, and the problem it solves.
+
+### ⚙️ Technical Stack
+- Primary language & runtime
+- Key frameworks, libraries, dependencies
+- Architecture pattern (e.g. microservice, CLI tool, SDK, plugin, etc.)
+
+### ✨ Key Features
+3-6 bullet points highlighting the most impactful or distinctive capabilities.
+
+### 🎯 Use Cases
+Who would use this and in what scenarios. Be specific (e.g. "backend developers needing X", not just "developers").
+
+### 📈 Traction & Signals
+Interpret the star count and forks in context of the repo's age and domain. Note any notable topics or community indicators.
+
+### 💡 Why It Stands Out
+1-2 sentences on what makes this repo notable compared to alternatives, or why it's gaining attention now.
+
+## Tone & Formatting Rules
+- Be precise and technical — avoid vague marketing language like "powerful" or "easy to use" without evidence.
+- Use **bold** only for proper nouns, library names, and critical terms.
+- Target length: 350-550 words. Prioritize clarity over completeness.
+- If README is missing or sparse, reason from the repo metadata and tech stack — clearly note when you're inferring.`;
+
+  const userPrompt = `Analyze the following GitHub repository and produce a structured technical summary for developers evaluating whether to use or follow this project.
+
+${content}
+
+Focus on actionable insight: what exactly does this do, how is it built, and why should a developer care?`;
+
+  return { systemPrompt, userPrompt };
+}
+
+function buildWordcloudPrompt(repos, period, language) {
+  const systemPrompt = `You are a technology intelligence analyst specializing in open source trends.
+
+Your task: analyze GitHub trending repositories and return a structured JSON object for a word cloud visualization.
+
+## Analysis Strategy
+- Extract technical terms: languages, frameworks, libraries, domains, architectural concepts
+- Normalize variants: "machine-learning", "ml", "machine learning" → "machine-learning"
+- Suppress noise: ignore generic words (tool, project, simple, awesome, build, based, use, support, fast, easy, new, app, make, help, open, data, list)
+- Infer domain clusters from co-occurring signals (e.g. "llm" + "rag" + "agent" → AI cluster)
+- Weight by: repo count mentioning term + star velocity (starsToday) + total stars
+
+## Categorization Rules
+- "language"   → programming/scripting language (python, rust, go, typescript …)
+- "framework"  → library or framework (react, pytorch, fastapi, langchain …)
+- "domain"     → problem space (ai/ml, devops, security, web, mobile, data …)
+- "concept"    → architectural or paradigm term (rag, agent, microservice, wasm, cli …)
+
+## JSON Schema (return ONLY this, no markdown fences, no explanation)
+{
+  "words": [
+    {
+      "text": string,          // lowercase, hyphenated if multi-word
+      "size": number,          // 10-30 scaled by weight
+      "category": "language" | "framework" | "domain" | "concept",
+      "repos": number,         // how many repos this term appears in
+      "weight": number         // raw weight score
+    }
+  ],
+  "categories": {
+    "languages":  { "count": number, "totalWeight": number },
+    "frameworks": { "count": number, "totalWeight": number },
+    "domains":    { "count": number, "totalWeight": number },
+    "concepts":   { "count": number, "totalWeight": number }
+  },
+  "insights": [string],        // 3-5 analyst-grade observations, specific and data-backed
+  "trends": {
+    "emerging":    [string],   // gaining fast, low base
+    "established": [string],   // consistently dominant
+    "rising":      [string]    // growing steadily
   }
-  return new TextDecoder("utf-8").decode(bytes);
 }
 
-function mapGitHubRepo(repo) {
-  return {
-    id: repo.id,
-    title: repo.full_name,
-    url: repo.html_url,
-    score: repo.stargazers_count,
-    by: repo.owner.login,
-    time: Math.floor(new Date(repo.created_at).getTime() / 1000),
-    description: repo.description,
-    language: repo.language,
-    topics: repo.topics || [],
-    forks: repo.forks_count,
-    readme_url: `${repo.html_url}/blob/main/README.md`,
-    repo_url: repo.html_url,
-    api_url: repo.url,
-    owner_avatar: repo.owner.avatar_url,
-  };
+## Hard Constraints
+- words array: 20-50 entries, no duplicates
+- text: minimum 2 characters, no punctuation except hyphens
+- size: must be integer in [10, 30]
+- insights: reference actual numbers (e.g. "12 of 25 repos use Python"), no vague claims
+- Return ONLY valid JSON — no markdown, no prose, no code fences`;
+
+  const userPrompt = `Analyze the following ${repos.length} GitHub trending repositories (${period} / lang filter: "${language || "all"}").
+
+${JSON.stringify(repos, null, 2)}
+
+Return the JSON object. No markdown, no explanation.`;
+
+  return { systemPrompt, userPrompt };
 }
 
-function safeParseJson(raw) {
-  if (!raw) return null;
-  // Strip ```json ... ``` or ``` ... ```
-  const stripped = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  return JSON.parse(stripped);
+async function callOpenAI(systemPrompt, userPrompt, env, apiKey) {
+  let apiUrl, requestBody;
+
+  if (apiKey) {
+    // User provided OpenAI key
+    apiUrl = "https://api.openai.com/v1/chat/completions";
+    requestBody = {
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    };
+  } else {
+    // Use Cloudflare AI
+    apiUrl =
+      "https://api.cloudflare.com/client/v4/accounts/9439b5a5a5b4a5b4a5b4a5b4a5b4a5b/ai/run/@cf/meta/llama-3.1-8b-instruct";
+    requestBody = {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    };
+  }
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+      ...(apiKey && { "User-Agent": "HN-Digest-Worker/1.0" }),
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI API request failed: ${response.status}`);
+  }
+
+  const aiData = await response.json();
+
+  if (apiKey) {
+    return aiData.choices?.[0]?.message?.content;
+  } else {
+    return aiData.result?.response;
+  }
+}
+
+// ─── WordCloud Analysis Module ───────────────────────────────────────────────────
+/**
+ * Trend analysis and wordcloud generation
+ * AI-powered keyword extraction and categorization
+ */
+
+// ─── API Handlers Module ───────────────────────────────────────────────────────
+/**
+ * HTTP request handlers for all API endpoints
+ * Request validation, response formatting, and error handling
+ */
+
+async function handleStories(request, url, env) {
+  try {
+    const period = url.searchParams.get("period") || "daily";
+    const language = url.searchParams.get("lang") || "";
+    const page = parseInt(url.searchParams.get("page") || "1", 10) || 1;
+    const limit = 15;
+
+    const repos = await fetchTrendingRepos(period, language, env);
+    const startIndex = (page - 1) * limit;
+    const pageRepos = repos.slice(startIndex, startIndex + limit);
+
+    return json({
+      stories: pageRepos,
+      hasMore: startIndex + limit < repos.length,
+      feed: period,
+    });
+  } catch (error) {
+    console.error("Trending fetch error:", error);
+    return json({ error: "Failed to fetch trending repositories" }, 500);
+  }
+}
+
+async function handleRepoDetails(request, url, env) {
+  try {
+    const repoId = url.searchParams.get("id");
+    if (!repoId) return json({ error: "Missing repository ID" }, 400);
+
+    const { repo, isCached } = await fetchGitHubRepo(repoId, env);
+
+    // Fetch and render README using the new function
+    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
+
+    const result = {
+      ...mapGitHubRepo(repo),
+      readme_content: readmeContent,
+      readme_html: readmeHtml,
+      raw_api_response: repo,
+      isCached,
+    };
+
+    repoCacheSet(repoId, { t: Date.now(), result });
+    return json(result);
+  } catch (error) {
+    console.error("Repo details fetch error:", error);
+    return json({ error: "Failed to fetch repository details" }, 500);
+  }
+}
+
+async function handleGitHubIssues(request, url, env) {
+  try {
+    const owner = url.searchParams.get("owner");
+    const repo = url.searchParams.get("repo");
+    if (!owner || !repo)
+      return json({ error: "Missing owner or repo parameters" }, 400);
+
+    const issues = await fetchGitHubIssues(owner, repo, env);
+
+    return json({
+      issues,
+      repo_url: `https://github.com/${owner}/${repo}`,
+      count: issues.length,
+    });
+  } catch (error) {
+    console.error("GitHub Issues fetch error:", error);
+    return json({ error: "Failed to fetch issues" }, 500);
+  }
 }
 
 async function handleSummarize(request, url, env) {
   const repoId = url.searchParams.get("id");
-  const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
-
   if (!repoId) {
-    return json({ error: "Missing repository ID" }, 400);
+    return json({ error: "Repository ID is required" }, 400);
   }
+  const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
 
   const cacheKey = `${repoId}_${lang}`;
   if (summaryCache.has(cacheKey)) {
@@ -549,100 +866,6 @@ Focus on actionable insight: what exactly does this do, how is it built, and why
       },
       500,
     );
-  }
-}
-
-async function handleRepoDetails(url, env) {
-  const repoId = url.searchParams.get("id");
-  if (!repoId) return json({ error: "Missing repository ID" }, 400);
-
-  const cached = repoCache.get(repoId);
-  if (cached && Date.now() - cached.t < LIST_CACHE_TTL) {
-    return json({ ...cached.result, cached: true });
-  }
-
-  try {
-    const repoUrl = repoId.includes("/")
-      ? `https://api.github.com/repos/${repoId}`
-      : `https://api.github.com/repositories/${repoId}`;
-
-    const ghHeaders = {
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "Github-Trending-Digest-Worker",
-      ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-    };
-
-    const [repoRes, readmeRes] = await Promise.all([
-      fetch(repoUrl, { headers: ghHeaders }),
-      fetch(`${repoUrl}/readme`, { headers: ghHeaders }).catch(() => null),
-    ]);
-
-    if (!repoRes.ok) {
-      if (repoRes.status === 403) {
-        const errorData = await repoRes.json().catch(() => ({}));
-        if (errorData.message?.includes("rate limit")) {
-          return json(
-            {
-              error: "GitHub API rate limit exceeded. Please try again later.",
-            },
-            429,
-          );
-        }
-      }
-      throw new Error(`GitHub API error: ${repoRes.status}`);
-    }
-
-    const repo = await repoRes.json();
-
-    // Fetch and render README using the new function
-    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
-
-    const result = {
-      ...mapGitHubRepo(repo),
-      readme_content: readmeContent,
-      readme_html: readmeHtml,
-      raw_api_response: repo,
-    };
-
-    repoCacheSet(repoId, { t: Date.now(), result });
-    return json(result);
-  } catch (error) {
-    console.error("Repo details fetch error:", error);
-    return json({ error: "Failed to fetch repository details" }, 500);
-  }
-}
-
-async function handleGitHubIssues(url, env) {
-  const owner = url.searchParams.get("owner");
-  const repo = url.searchParams.get("repo");
-  if (!owner || !repo)
-    return json({ error: "Missing owner or repo parameters" }, 400);
-
-  try {
-    const issuesUrl = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&sort=created&direction=desc&per_page=25`;
-    const response = await fetch(issuesUrl, {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Trending-Digest-Worker",
-        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 404)
-        return json({ error: "Repository not found or no issues" }, 404);
-      throw new Error(`GitHub API error: ${response.status}`);
-    }
-
-    const issues = await response.json();
-    return json({
-      issues,
-      repo_url: `https://github.com/${owner}/${repo}`,
-      count: issues.length,
-    });
-  } catch (error) {
-    console.error("GitHub Issues fetch error:", error);
-    return json({ error: "Failed to fetch issues" }, 500);
   }
 }
 
@@ -988,21 +1211,59 @@ function extractBasicKeywords(stories) {
   };
 }
 
+// ─── Main Export Module ───────────────────────────────────────────────────────
+/**
+ * Main Cloudflare Worker export
+ * Route handling and request dispatch
+ */
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
+      return new Response(null, {
+        status: 200,
+        headers: corsHeaders(),
+      });
     }
 
     const url = new URL(request.url);
-    const path = url.pathname.replace(/\/$/, "") || "/";
 
-    if (path === "/api/stories") return handleStories(url);
-    if (path === "/api/repo") return handleRepoDetails(url, env);
-    if (path === "/api/issues") return handleGitHubIssues(url, env);
-    if (path === "/api/summarize") return handleSummarize(request, url, env);
-    if (path === "/api/wordcloud") return handleWordCloud(request, url, env);
+    // Route handling
+    try {
+      if (url.pathname === "/api/stories") {
+        return await handleStories(request, url, env);
+      }
 
-    return env.ASSETS.fetch(request);
+      if (url.pathname === "/api/repo") {
+        return await handleRepoDetails(request, url, env);
+      }
+
+      if (url.pathname === "/api/issues") {
+        return handleGitHubIssues(request, url, env);
+      }
+
+      if (url.pathname === "/api/summarize") {
+        return await handleSummarize(request, url, env);
+      }
+
+      if (url.pathname === "/api/wordcloud") {
+        return await handleWordCloud(request, url, env);
+      }
+
+      // Serve static assets
+      if (url.pathname === "/" || url.pathname === "/index.html") {
+        return env.ASSETS.fetch(request);
+      }
+
+      if (url.pathname.startsWith("/")) {
+        return env.ASSETS.fetch(request);
+      }
+
+      return new Response("Not found", { status: 404 });
+    } catch (error) {
+      console.error("Worker error:", error);
+      return json({ error: "Internal server error" }, 500);
+    }
   },
 };
