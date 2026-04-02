@@ -468,6 +468,42 @@ function getReadmeStyles() {
         color: #93c5fd !important; 
       }
       
+      /* GitHub badges/shields styling */
+      a img[src*="shields.io"], a img[alt*="badge"] {
+        display: inline !important;
+        vertical-align: middle !important;
+        margin: 0 2px !important;
+      }
+      
+      /* Centered div with badges should stay inline */
+      div[align="center"] {
+        text-align: center !important;
+        line-height: 1.2 !important;
+      }
+      
+      div[align="center"] a {
+        display: inline-block !important;
+        margin: 0 2px !important;
+      }
+      
+      div[align="center"] a img {
+        display: inline !important;
+        vertical-align: middle !important;
+        max-width: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+      }
+      
+      /* General inline images (badges, shields) */
+      p a img, div[align="center"] img {
+        display: inline !important;
+        vertical-align: middle !important;
+        max-width: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }
+      
       code { 
         font-family: 'Geist Mono', monospace; 
         font-size: 0.8125rem; 
