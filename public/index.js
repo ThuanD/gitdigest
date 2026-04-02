@@ -408,7 +408,230 @@ function syncReaderViewToggleUi() {
   );
 }
 
-// ─── Source panel ─────────────────────────────────────────────────────────────
+// ─── README Shadow DOM Utilities ──────────────────────────────────────────────────
+function getOrCreateReadmeHost() {
+  let host = readerSourceIframeWrap.querySelector('.readme-shadow-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'readme-shadow-host';
+    host.style.cssText = "width:100%;height:100%;overflow-y:auto;";
+    readerSourceIframeWrap.appendChild(host);
+  }
+  return host;
+}
+
+function getOrCreateShadowRoot(host) {
+  let shadowRoot = host.shadowRoot;
+  if (!shadowRoot) {
+    shadowRoot = host.attachShadow({ mode: 'open' });
+  }
+  return shadowRoot;
+}
+
+function getReadmeStyles() {
+  return `
+    <style>
+      :host {
+        display: block;
+        color: #e4e4e7;
+        font-family: 'Geist Sans', sans-serif;
+        line-height: 1.7;
+        font-size: 0.9375rem;
+        background: #0c0c0e;
+        padding: 1.5rem;
+        box-sizing: border-box;
+      }
+      
+      /* GitHub-specific overrides for our dark theme */
+      h1,h2,h3,h4,h5,h6 { 
+        color: #fff !important; 
+        border-bottom-color: #27272a !important;
+        font-weight: 600;
+        margin: 1.5rem 0 0.75rem;
+        padding-bottom: 0.4rem;
+      }
+      h1 { font-size: 1.4rem; }
+      h2 { font-size: 1.2rem; }
+      h3 { font-size: 1.05rem; }
+      h4 { font-size: 0.95rem; }
+      
+      p { 
+        color: #d4d4d8 !important; 
+        margin: 0 0 1rem;
+      }
+      
+      a { 
+        color: #60a5fa !important; 
+        text-decoration: underline;
+      }
+      a:hover { 
+        color: #93c5fd !important; 
+      }
+      
+      code { 
+        font-family: 'Geist Mono', monospace; 
+        font-size: 0.8125rem; 
+        background-color: #27272a !important; 
+        color: #fbbf24 !important; 
+        padding: 0.1rem 0.35rem; 
+        border-radius: 0.25rem;
+      }
+      
+      pre { 
+        background-color: #18181b !important; 
+        border: 1px solid #27272a !important; 
+        border-radius: 0.5rem; 
+        padding: 1rem; 
+        overflow-x: auto; 
+        margin: 1rem 0;
+      }
+      
+      pre code { 
+        background: transparent !important; 
+        color: #e4e4e7 !important; 
+        padding: 0;
+      }
+      
+      blockquote { 
+        border-left: 3px solid #3f3f46 !important; 
+        margin: 1rem 0; 
+        padding: 0.75rem 1rem; 
+        background-color: #18181b !important; 
+        border-radius: 0.375rem; 
+        color: #a1a1aa !important;
+      }
+      
+      table { 
+        border-collapse: collapse; 
+        width: 100%; 
+        margin: 1rem 0;
+        border-color: #27272a !important;
+      }
+      
+      th,td { 
+        border: 1px solid #27272a !important; 
+        padding: 0.5rem 0.75rem; 
+        color: #d4d4d8 !important;
+      }
+      
+      th { 
+        background-color: #27272a !important; 
+        color: #fff !important; 
+        font-weight: 600;
+      }
+      
+      hr { 
+        border: none; 
+        border-top: 1px solid #27272a !important; 
+        margin: 1.5rem 0;
+      }
+      
+      img { 
+        max-width: 100%; 
+        border-radius: 0.5rem; 
+        border: 1px solid #27272a !important; 
+        margin: 1rem 0;
+      }
+      
+      ul,ol { 
+        color: #d4d4d8 !important; 
+        padding-left: 1.5rem; 
+        margin: 0 0 1rem; 
+      }
+      
+      li { 
+        margin-bottom: 0.25rem;
+      }
+    </style>
+  `;
+}
+
+function getLoadingStyles() {
+  return `
+    <style>
+      :host {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        gap: 0.75rem;
+        padding: 2rem;
+        color: #71717a;
+        font-family: 'Geist Sans', sans-serif;
+        background: #0c0c0e;
+        box-sizing: border-box;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner {
+        width: 1rem;
+        height: 1rem;
+        animation: spin 1s linear infinite;
+      }
+    </style>
+  `;
+}
+
+function getErrorStyles() {
+  return `
+    <style>
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        gap: 1rem;
+        text-align: center;
+        color: #71717a;
+        font-family: 'Geist Sans', sans-serif;
+        background: #0c0c0e;
+        box-sizing: border-box;
+        padding: 2rem;
+      }
+      .icon {
+        width: 2rem;
+        height: 2rem;
+        color: #52525b;
+      }
+      a {
+        color: #ff8533;
+        text-decoration: underline;
+      }
+      .error-text {
+        font-size: 0.875rem;
+      }
+      .error-detail {
+        font-size: 0.75rem;
+      }
+    </style>
+  `;
+}
+
+function processReadmeLinks(shadowRoot) {
+  const links = shadowRoot.querySelectorAll('.readme-content a[href]');
+  links.forEach(link => {
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+  });
+}
+
+function getReadmeHtml(data, story) {
+  if (data.readme_html) {
+    return data.readme_html;
+  }
+  
+  // Fallback to our own markdown parsing
+  const fullName = data.raw_api_response?.full_name || story.id;
+  const branch = data.raw_api_response?.default_branch || "main";
+  const md = resolveReadmeImages(
+    data.readme_content || "*No README available.*",
+    fullName,
+    branch,
+  );
+  return typeof marked !== "undefined" ? marked.parse(md) : markdownToSafeHtml(md);
+}
+
+// ─── README Rendering Functions ───────────────────────────────────────────────────────
 function closeSourcePanel(persistPreference) {
   sourceFramePanel.classList.add("hidden");
   sourceFramePanel.setAttribute("hidden", "");
@@ -446,12 +669,10 @@ async function openSourcePanelForStory(story, persistPreference) {
 
   // FIX: also remove the HTML `hidden` attribute, not just the class
   sourceFramePanel.classList.remove("hidden");
-  sourceFramePanel.removeAttribute("hidden");
-  sourceFramePanel.classList.add("flex");
-  sourceFramePanel.scrollTop = 0;
-
-  // Hide summary content when opening source panel
   readerBody.classList.add("hidden");
+  readerSourceIframeWrap.classList.remove("hidden");
+  sourceFramePanel.classList.remove("hidden");
+  sourceFramePanel.removeAttribute("hidden");
 
   const cacheKey = story.id;
   const cached = readmeCache.get(cacheKey);
@@ -464,24 +685,17 @@ async function openSourcePanelForStory(story, persistPreference) {
     return;
   }
 
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-
-  readmeDiv.innerHTML = `
-    <div style="display:flex;align-items:center;gap:0.75rem;padding:2rem;color:#71717a;">
-      <svg style="width:1rem;height:1rem;animation:spin 1s linear infinite;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle style="opacity:0.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-      </svg>
-      <span style="font-size:0.8125rem;">Loading README...</span>
-    </div>`;
+  // Show loading state
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  const loadingHtml = getLoadingStyles() + `
+    <svg class="spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle style="opacity:0.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+    </svg>
+    <span style="font-size:0.8125rem;">Loading README...</span>
+  `;
+  shadowRoot.innerHTML = loadingHtml;
 
   try {
     const res = await fetch(`/api/repo?id=${encodeURIComponent(story.id)}`);
@@ -501,72 +715,32 @@ async function openSourcePanelForStory(story, persistPreference) {
 }
 
 function renderReadmeContent(data, story) {
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-
-  const fullName = data.raw_api_response?.full_name || story.id;
-  const branch = data.raw_api_response?.default_branch || "main";
-  const md = resolveReadmeImages(
-    data.readme_content || "*No README available.*",
-    fullName,
-    branch,
-  );
-  const html =
-    typeof marked !== "undefined" ? marked.parse(md) : markdownToSafeHtml(md);
-
-  readmeDiv.innerHTML = `
-    <style>
-      .readme-render h1,.readme-render h2,.readme-render h3,.readme-render h4{color:#fff;font-weight:600;margin:1.5rem 0 0.75rem;padding-bottom:0.4rem;border-bottom:1px solid #27272a;}
-      .readme-render h1{font-size:1.4rem;} .readme-render h2{font-size:1.2rem;} .readme-render h3{font-size:1.05rem;} .readme-render h4{font-size:0.95rem;}
-      .readme-render p{margin:0 0 1rem;color:#d4d4d8;}
-      .readme-render a{color:#60a5fa;text-decoration:underline;} .readme-render a:hover{color:#93c5fd;}
-      .readme-render ul,.readme-render ol{color:#d4d4d8;padding-left:1.5rem;margin:0 0 1rem;} .readme-render li{margin-bottom:0.25rem;}
-      .readme-render blockquote{border-left:3px solid #3f3f46;margin:1rem 0;padding:0.75rem 1rem;background:#18181b;border-radius:0.375rem;color:#a1a1aa;}
-      .readme-render code{font-family:'Geist Mono',monospace;font-size:0.8125rem;background:#27272a;color:#fbbf24;padding:0.1rem 0.35rem;border-radius:0.25rem;}
-      .readme-render pre{background:#18181b;border:1px solid #27272a;border-radius:0.5rem;padding:1rem;overflow-x:auto;margin:1rem 0;}
-      .readme-render pre code{background:transparent;color:#e4e4e7;padding:0;}
-      .readme-render img{max-width:100%;border-radius:0.5rem;border:1px solid #27272a;margin:1rem 0;}
-      .readme-render table{border-collapse:collapse;width:100%;margin:1rem 0;}
-      .readme-render th,.readme-render td{border:1px solid #27272a;padding:0.5rem 0.75rem;color:#d4d4d8;}
-      .readme-render th{background:#27272a;color:#fff;font-weight:600;}
-      .readme-render hr{border:none;border-top:1px solid #27272a;margin:1.5rem 0;}
-      @keyframes spin{to{transform:rotate(360deg);}}
-    </style>
-    <div class="readme-render">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
-
-  readmeDiv.querySelectorAll("a[href]").forEach((a) => {
-    a.setAttribute("target", "_blank");
-    a.setAttribute("rel", "noopener noreferrer");
-  });
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  
+  const html = getReadmeHtml(data, story);
+  const styles = getReadmeStyles();
+  
+  shadowRoot.innerHTML = styles + `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
+  
+  processReadmeLinks(shadowRoot);
 }
 
 function renderReadmeError(err, story) {
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-  readmeDiv.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:1rem;text-align:center;color:#71717a;">
-      <svg style="width:2rem;height:2rem;color:#52525b;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-      <p style="font-size:0.875rem;">Failed to load README</p>
-      <p style="font-size:0.75rem;">${err.message}</p>
-      <a href="${story.url}" target="_blank" rel="noopener noreferrer"
-        style="color:#ff8533;font-size:0.8125rem;text-decoration:underline;">View on GitHub ↗</a>
-    </div>`;
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  
+  const styles = getErrorStyles();
+  const content = `
+    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="error-text">Failed to load README</p>
+    <p class="error-detail">${err.message}</p>
+    <a href="${story.url}" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+  `;
+  
+  shadowRoot.innerHTML = styles + content;
 }
 
 function toggleSourcePanelFromUi() {

@@ -198,6 +198,137 @@ async function parseTrendingPage(response) {
   });
 }
 
+function resolveMediaUrls(html, fullName, defaultBranch = 'main') {
+  const base = `https://raw.githubusercontent.com/${fullName}/${defaultBranch}`;
+  return html
+    // Handle <img> tags with double quotes
+    .replace(
+      /<img([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<img${before} src="${base}/${cleanSrc}"${after}>`;
+      }
+    )
+    // Handle <img> tags with single quotes
+    .replace(
+      /<img([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<img${before} src='${base}/${cleanSrc}'${after}>`;
+      }
+    )
+    // Handle <video> tags with double quotes
+    .replace(
+      /<video([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<video${before} src="${base}/${cleanSrc}"${after}>`;
+      }
+    )
+    // Handle <video> tags with single quotes
+    .replace(
+      /<video([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<video${before} src='${base}/${cleanSrc}'${after}>`;
+      }
+    )
+    // Handle <source> tags inside <video> with double quotes
+    .replace(
+      /<source([^>]*)\ssrc="(?!https?:\/\/)([^"]+)"([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<source${before} src="${base}/${cleanSrc}"${after}>`;
+      }
+    )
+    // Handle <source> tags inside <video> with single quotes
+    .replace(
+      /<source([^>]*)\ssrc='(?!https?:\/\/)([^']+)'([^>]*)>/gi,
+      (_, before, src, after) => {
+        const cleanSrc = src.replace(/^\.\//, "");
+        return `<source${before} src='${base}/${cleanSrc}'${after}>`;
+      }
+    );
+}
+
+async function renderGitHubMarkdown(content, fullName, env) {
+  try {
+    const renderRes = await fetch("https://api.github.com/markdown", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Github-Trending-Digest-Worker",
+        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+      },
+      body: JSON.stringify({
+        text: content,
+        mode: "gfm",
+        context: fullName
+      }),
+    });
+    
+    if (renderRes.ok) {
+      const html = await renderRes.text();
+      return html; // Will be processed by resolveMediaUrls
+    }
+    return null;
+  } catch (error) {
+    console.log("GitHub markdown render failed:", error.message);
+    return null;
+  }
+}
+
+async function fetchAndRenderReadme(repo, env, forAI = false) {
+  let readmeContent = "";
+  let readmeHtml = "";
+  
+  try {
+    // Fetch README content
+    const readmeRes = await fetch(
+      `https://api.github.com/repos/${repo.full_name}/readme`,
+      {
+        headers: {
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "Github-Trending-Digest-Worker",
+          ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
+        },
+      },
+    );
+    
+    if (readmeRes.ok) {
+      const readmeData = await readmeRes.json();
+      readmeContent = atob(readmeData.content);
+      
+      // Render to HTML using GitHub's API
+      readmeHtml = await renderGitHubMarkdown(readmeContent, repo.full_name, env);
+      
+      // Resolve media URLs if HTML was rendered
+      if (readmeHtml) {
+        readmeHtml = resolveMediaUrls(readmeHtml, repo.full_name, repo.default_branch);
+      }
+      
+      // For AI summary, process content to be more concise
+      if (forAI && readmeContent) {
+        readmeContent = readmeContent
+          .replace(/```[\s\S]*?```/g, "[CODE BLOCK]")
+          .replace(/`[^`]*`/g, "[CODE]")
+          .replace(/!\[.*?\]\(.*?\)/g, "[IMAGE]")
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+          .replace(/#{1,6}\s*/g, "")
+          .replace(/\*\*([^*]*)\*\*/g, "$1")
+          .replace(/\*([^*]*)\*/g, "$1")
+          .replace(/\n+/g, " ")
+          .substring(0, 8000);
+      }
+    }
+  } catch (readmeError) {
+    console.log("README fetch failed:", readmeError.message);
+  }
+  
+  return { readmeContent, readmeHtml };
+}
+
 function mapGitHubRepo(repo) {
   return {
     id: repo.id,
@@ -258,33 +389,8 @@ async function handleSummarize(request, url, env) {
 
     const repo = await repoRes.json();
 
-    let readmeContent = "";
-    try {
-      const readmeRes = await fetch(
-        `https://api.github.com/repos/${repo.full_name}/readme`,
-        {
-          headers: {
-            Accept: "application/vnd.github.v3+json",
-            "User-Agent": "Github-Trending-Digest-Worker",
-          },
-        },
-      );
-      if (readmeRes.ok) {
-        const readmeData = await readmeRes.json();
-        readmeContent = atob(readmeData.content)
-          .replace(/```[\s\S]*?```/g, "[CODE BLOCK]")
-          .replace(/`[^`]*`/g, "[CODE]")
-          .replace(/!\[.*?\]\(.*?\)/g, "[IMAGE]")
-          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-          .replace(/#{1,6}\s*/g, "")
-          .replace(/\*\*([^*]*)\*\*/g, "$1")
-          .replace(/\*([^*]*)\*/g, "$1")
-          .replace(/\n+/g, " ")
-          .substring(0, 8000);
-      }
-    } catch (readmeError) {
-      console.log("README fetch failed:", readmeError.message);
-    }
+    // Fetch and render README using the new function (with AI processing)
+    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env, true);
 
     let contentToSummarize = `Repository: ${repo.full_name}\n`;
     contentToSummarize += `Description: ${repo.description || "No description"}\n`;
@@ -417,15 +523,14 @@ async function handleRepoDetails(url, env) {
     }
 
     const repo = await repoRes.json();
-    let readmeContent = "";
-    if (readmeRes?.ok) {
-      const readmeData = await readmeRes.json();
-      readmeContent = atob(readmeData.content);
-    }
+    
+    // Fetch and render README using the new function
+    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
 
     const result = {
       ...mapGitHubRepo(repo),
       readme_content: readmeContent,
+      readme_html: readmeHtml,
       raw_api_response: repo,
     };
 
