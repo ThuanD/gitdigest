@@ -212,7 +212,15 @@ function resetReaderForFeedSwitch() {
   currentActiveRepo = null;
   feedList
     .querySelectorAll(".repo-card.is-active")
-    .forEach((el) => el.classList.remove("is-active"));
+    .forEach((el) => {
+      el.classList.remove("is-active");
+      // Reset check-icon opacity
+      const icon = el.querySelector(".check-icon");
+      if (icon) {
+        icon.classList.remove("opacity-100");
+        icon.classList.add("opacity-0");
+      }
+    });
   emptyState.classList.remove("hidden");
   readerWorkspace.classList.add("hidden");
   readerWorkspace.classList.remove("flex");
@@ -371,7 +379,7 @@ function applyReadState(repo, cardElement) {
   cardElement.classList.add("is-read");
   const icon = cardElement.querySelector(".check-icon");
   if (icon) {
-    // Fix: Toggle opacity classes properly instead of looking for non-existent 'hidden' class
+    // Use opacity classes to match renderStoriesFromIds
     icon.classList.remove("opacity-0");
     icon.classList.add("opacity-100");
   }
@@ -1149,7 +1157,7 @@ function renderReposFromIds(repos, page = 1) {
     card.innerHTML = `
       <div class="flex justify-between items-start mb-3">
         <h3 class="font-medium text-[14px] leading-snug text-textMain group-hover:text-white transition-colors pr-2">${titleSafe}</h3>
-        <div class="check-icon ${activeCardId === repo.id ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
+        <div class="check-icon ${isRead(repo.id) ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
@@ -1211,7 +1219,15 @@ function applyBlankTargets(root) {
 async function handleCardClick(repo, cardElement) {
   if (activeCardId) {
     const oldCard = document.getElementById(`card-${activeCardId}`);
-    if (oldCard) oldCard.classList.remove("is-active");
+    if (oldCard) {
+      oldCard.classList.remove("is-active");
+      // Reset check-icon opacity for old card
+      const oldIcon = oldCard.querySelector(".check-icon");
+      if (oldIcon) {
+        oldIcon.classList.remove("opacity-100");
+        oldIcon.classList.add("opacity-0");
+      }
+    }
   }
   activeCardId = repo.id;
   currentActiveRepo = repo;
@@ -1416,7 +1432,7 @@ async function loadWordCloud() {
     if (data.error) throw new Error(data.error);
 
     // Update status
-    wordcloudStatus.textContent = data.cached ? "From cache" : "Generated";
+    wordcloudStatus.textContent = data.isCached ? "From cache" : "Generated";
 
     // Render wordcloud
     renderWordCloud(data.words);

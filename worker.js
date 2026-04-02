@@ -639,7 +639,7 @@ async function callOpenAI(systemPrompt, userPrompt, apiKey) {
       max_tokens: 4096,
     };
   } else {
-    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${apiKey}`;
     requestBody = {
       contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
       generationConfig: { temperature: 0.45, maxOutputTokens: 4096 },
@@ -655,10 +655,13 @@ async function callOpenAI(systemPrompt, userPrompt, apiKey) {
     body: JSON.stringify(requestBody),
   });
 
-  if (!response.ok)
-    throw new Error(`AI API request failed: ${response.status}`);
-
   const aiData = await response.json();
+
+  if (!response.ok) {
+    console.error("AI API request failed:", aiData);
+    throw new Error(`AI API request failed: ${response.status}`);
+  }
+
   if (aiData.error) throw new Error(aiData.error.message || "API error");
 
   const data = apiKey.startsWith("AIza")
@@ -830,25 +833,10 @@ async function handleWordCloud(request, url, env) {
     // Check cache first
     const cached = wordcloudCache.get(cacheKey);
     if (cached && Date.now() - cached.time < WORDCLOUD_CACHE_TTL) {
-      return json({ ...cached.data, cached: true });
+      return json({ ...cached.data, isCached: true });
     }
 
-    // Get trending repos (reuse existing logic)
-    const sinceMap = { daily: "daily", weekly: "weekly", monthly: "monthly" };
-    const since = sinceMap[period] || "daily";
-
-    const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
-
-    const res = await fetch(trendingUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; TrendingBot/1.0)",
-        Accept: "text/html",
-      },
-    });
-
-    if (!res.ok) throw new Error(`GitHub trending fetch failed: ${res.status}`);
-
-    const repos = await parseTrendingPage(res);
+    const repos = await fetchTrendingRepos(period, language, env);
 
     // AI Analysis for wordcloud
     const apiKey =
@@ -870,115 +858,10 @@ async function handleWordCloud(request, url, env) {
       starsToday: repo.starsToday,
     }));
 
-    const systemPrompt = `You are a technology intelligence analyst specializing in open source trends.
+    const {systemPrompt, userPrompt} = buildWordcloudPrompt(repoData, period, language);
 
-Your task: analyze GitHub trending repositories and return a structured JSON object for a word cloud visualization.
-
-## Analysis Strategy
-- Extract technical terms: languages, frameworks, libraries, domains, architectural concepts
-- Normalize variants: "machine-learning", "ml", "machine learning" → "machine-learning"
-- Suppress noise: ignore generic words (tool, project, simple, awesome, build, based, use, support, fast, easy, new, app, make, help, open, data, list)
-- Infer domain clusters from co-occurring signals (e.g. "llm" + "rag" + "agent" → AI cluster)
-- Weight by: repo count mentioning term + star velocity (starsToday) + total stars
-
-## Categorization Rules
-- "language"   → programming/scripting language (python, rust, go, typescript …)
-- "framework"  → library or framework (react, pytorch, fastapi, langchain …)
-- "domain"     → problem space (ai/ml, devops, security, web, mobile, data …)
-- "concept"    → architectural or paradigm term (rag, agent, microservice, wasm, cli …)
-
-## JSON Schema (return ONLY this, no markdown fences, no explanation)
-{
-  "words": [
-    {
-      "text": string,          // lowercase, hyphenated if multi-word
-      "size": number,          // 10-30 scaled by weight
-      "category": "language" | "framework" | "domain" | "concept",
-      "repos": number,         // how many repos this term appears in
-      "weight": number         // raw weight score
-    }
-  ],
-  "categories": {
-    "languages":  { "count": number, "totalWeight": number },
-    "frameworks": { "count": number, "totalWeight": number },
-    "domains":    { "count": number, "totalWeight": number },
-    "concepts":   { "count": number, "totalWeight": number }
-  },
-  "insights": [string],        // 3-5 analyst-grade observations, specific and data-backed
-  "trends": {
-    "emerging":    [string],   // gaining fast, low base
-    "established": [string],   // consistently dominant
-    "rising":      [string]    // growing steadily
-  }
-}
-
-## Hard Constraints
-- words array: 20-50 entries, no duplicates
-- text: minimum 2 characters, no punctuation except hyphens
-- size: must be integer in [10, 30]
-- insights: reference actual numbers (e.g. "12 of 25 repos use Python"), no vague claims
-- Return ONLY valid JSON — no markdown, no prose, no code fences`;
-
-    const userPrompt = `Analyze the following ${repoData.length} GitHub trending repositories (${period} / lang filter: "${language || "all"}").
-
-${JSON.stringify(repoData, null, 2)}
-
-Return the JSON object. No markdown, no explanation.`;
-
-    // Call AI API
-    let apiUrl, requestBody;
-
-    if (apiKey.startsWith("gsk_")) {
-      apiUrl = "https://api.groq.com/openai/v1/chat/completions";
-      requestBody = {
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2048,
-      };
-    } else if (apiKey.startsWith("sk-")) {
-      apiUrl = "https://api.openai.com/v1/chat/completions";
-      requestBody = {
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 2048,
-      };
-    } else {
-      // Gemini
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      requestBody = {
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
-      };
-    }
-
-    const headers = { "Content-Type": "application/json" };
-    if (!apiKey.startsWith("AIza")) {
-      headers.Authorization = `Bearer ${apiKey}`;
-    }
-
-    const aiRes = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-
-    const aiData = await aiRes.json();
-    if (aiData.error)
-      throw new Error(aiData.error.message || "AI analysis failed");
-
-    const analysis = apiKey.startsWith("AIza")
-      ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
-      : aiData.choices?.[0]?.message?.content;
-
-    if (!analysis) throw new Error("No analysis received from AI");
+    // Call AI API using helper function
+    const analysis = await callOpenAI(systemPrompt, userPrompt, apiKey);
 
     // Parse AI response
     let wordData;
@@ -1010,6 +893,17 @@ Return the JSON object. No markdown, no explanation.`;
 
     return json({ ...wordData, cached: false });
   } catch (error) {
+    if (error instanceof NotFoundError)
+      return json({ error: error.message }, 404);
+    if (error instanceof RateLimitError)
+      return json({ error: error.message }, 429);
+    if (error instanceof AICallError)
+      return json({ error: error.message }, 400);
+    if (error instanceof AIResponseError)
+      return json({ error: error.message }, 400);
+    if (error instanceof AINoContentError)
+      return json({ error: error.message }, 400);
+
     console.error("WordCloud analysis error:", error);
     return json({ error: "Failed to generate wordcloud analysis" }, 500);
   }
