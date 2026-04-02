@@ -719,7 +719,7 @@ async function handleRepoDetails(request, url, env) {
       ...mapGitHubRepo(repo),
       readmeContent: readmeContent,
       readmeHtml: readmeHtml,
-      raw_api_response: repo,
+      rawApiResponse: repo,
       isCached,
     };
 
