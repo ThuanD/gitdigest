@@ -1319,7 +1319,7 @@ async function loadSummaryForRepo(repo) {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const res = await fetch(
-      `/api/summarize?id=${encodeURIComponent(repo.id)}&lang=${encodeURIComponent(currentLang)}`,
+      `/api/summarize?repoId=${encodeURIComponent(repo.id)}&lang=${encodeURIComponent(currentLang)}`,
       { headers },
     );
     const data = await res.json().catch(() => ({}));
@@ -1345,10 +1345,10 @@ async function loadSummaryForRepo(repo) {
     const summary = data.summary;
     if (!summary) throw new Error("Empty summary");
 
-    const statusLabel = data.cached
+    const statusLabel = data.isCached
       ? `Server cache${summaryStatusLangSuffix()}`
       : `Generated${summaryStatusLangSuffix()}`;
-    const dotClass = data.cached ? "bg-hn" : "bg-green-500";
+    const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`;
     readerBody.classList.remove("opacity-50");
     readerBody.innerHTML = markdownToSafeHtml(summary);

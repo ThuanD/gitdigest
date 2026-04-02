@@ -10,9 +10,12 @@ const summaryCache = new Map();
 const repoCache = new Map();
 const wordcloudCache = new Map();
 
-// ─── Custom exception ────────────────────────────────────────────── 
+// ─── Custom exception ──────────────────────────────────────────────
 class RateLimitError extends Error {}
 class NotFoundError extends Error {}
+class AICallError extends Error {}
+class AIResponseError extends Error {}
+class AINoContentError extends Error {}
 
 // ─── Utility Functions Module ────────────────────────────────────────────────────
 /**
@@ -111,20 +114,18 @@ function mapTrendingRepository(repo) {
 
 function mapGitHubRepo(repo) {
   return {
-    id: repo.id,
-    title: repo.full_name,
-    url: repo.html_url,
-    score: repo.stargazers_count,
-    by: repo.owner.login,
-    time: Math.floor(new Date(repo.created_at).getTime() / 1000),
+    id: repo.full_name,
+    fullName: repo.fullName,
+    htmlUrl: repo.html_url,
+    stars: repo.stargazers_count,
+    owner: repo.owner.login,
+    createdAt: Math.floor(new Date(repo.created_at).getTime() / 1000),
+    pushedAt: Math.floor(new Date(repo.pushed_at).getTime() / 1000),
     description: repo.description,
     language: repo.language,
     topics: repo.topics || [],
     forks: repo.forks_count,
-    readme_url: `${repo.html_url}/blob/main/README.md`,
-    repo_url: repo.html_url,
-    api_url: repo.url,
-    owner_avatar: repo.owner.avatar_url,
+    readmeUrl: `${repo.html_url}/blob/main/README.md`,
   };
 }
 
@@ -280,10 +281,11 @@ async function fetchGitHubRepo(repoId, env) {
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const repo = await response.json();
-    repoCacheSet(repoId, { repo: repo, time: Date.now() });
+    const repoRes = await response.json();
+    const repo = mapGitHubRepo(repoRes);
+    repoCacheSet(repoId, { repo, time: Date.now() });
 
-    return { repo: repo, isCached: false };
+    return { repo, isCached: false };
   } catch (error) {
     console.error("Failed to load GitHub repo:", error);
     return [];
@@ -436,7 +438,7 @@ async function renderGitHubMarkdown(content, fullName, env) {
     }
     return null;
   } catch (error) {
-    console.log("GitHub markdown render failed:", error.message);
+    console.warn("GitHub markdown render failed:", error.message);
     return null;
   }
 }
@@ -496,7 +498,7 @@ async function fetchAndRenderReadme(repo, env, forAI = false) {
       }
     }
   } catch (readmeError) {
-    console.log("README fetch failed:", readmeError.message);
+    console.error("README fetch failed:", readmeError.message);
   }
 
   return { readmeContent, readmeHtml };
@@ -544,6 +546,8 @@ Interpret the star count and forks in context of the repo's age and domain. Note
   const userPrompt = `Analyze the following GitHub repository and produce a structured technical summary for developers evaluating whether to use or follow this project.
 
 ${content}
+
+${JSON.stringify(repo, null, 2)}
 
 Focus on actionable insight: what exactly does this do, how is it built, and why should a developer care?`;
 
@@ -609,54 +613,60 @@ Return the JSON object. No markdown, no explanation.`;
   return { systemPrompt, userPrompt };
 }
 
-async function callOpenAI(systemPrompt, userPrompt, env, apiKey) {
+async function callOpenAI(systemPrompt, userPrompt, apiKey) {
   let apiUrl, requestBody;
 
-  if (apiKey) {
-    // User provided OpenAI key
+  if (apiKey.startsWith("gsk_")) {
+    apiUrl = "https://api.groq.com/openai/v1/chat/completions";
+    requestBody = {
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.45,
+      max_tokens: 4096,
+    };
+  } else if (apiKey.startsWith("sk-")) {
     apiUrl = "https://api.openai.com/v1/chat/completions";
     requestBody = {
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.3,
-      max_tokens: 2000,
+      temperature: 0.45,
+      max_tokens: 4096,
     };
   } else {
-    // Use Cloudflare AI
-    apiUrl =
-      "https://api.cloudflare.com/client/v4/accounts/9439b5a5a5b4a5b4a5b4a5b4a5b4a5b/ai/run/@cf/meta/llama-3.1-8b-instruct";
+    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     requestBody = {
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+      contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+      generationConfig: { temperature: 0.45, maxOutputTokens: 4096 },
     };
   }
+
+  const headers = { "Content-Type": "application/json" };
+  if (!apiKey.startsWith("AIza")) headers.Authorization = `Bearer ${apiKey}`;
 
   const response = await fetch(apiUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
-      ...(apiKey && { "User-Agent": "HN-Digest-Worker/1.0" }),
-    },
+    headers,
     body: JSON.stringify(requestBody),
   });
 
-  if (!response.ok) {
+  if (!response.ok)
     throw new Error(`AI API request failed: ${response.status}`);
-  }
 
   const aiData = await response.json();
+  if (aiData.error) throw new Error(aiData.error.message || "API error");
 
-  if (apiKey) {
-    return aiData.choices?.[0]?.message?.content;
-  } else {
-    return aiData.result?.response;
-  }
+  const data = apiKey.startsWith("AIza")
+    ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
+    : aiData.choices?.[0]?.message?.content;
+  if (!data) throw new Error("No content received from API");
+
+  return data;
 }
 
 // ─── WordCloud Analysis Module ───────────────────────────────────────────────────
@@ -722,7 +732,7 @@ async function handleRepoDetails(request, url, env) {
       return json({ error: error.message }, 429);
 
     console.error("Repo details fetch error:", error);
-    return json({ error: "Failed to fetch repository details" }, 500);
+    return json({ error: "Failed to fetch repository details." }, 500);
   }
 }
 
@@ -747,164 +757,67 @@ async function handleGitHubIssues(request, url, env) {
 }
 
 async function handleSummarize(request, url, env) {
-  const repoId = url.searchParams.get("id");
-  if (!repoId) {
-    return json({ error: "Repository ID is required" }, 400);
-  }
-  const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
-
-  const cacheKey = `${repoId}_${lang}`;
-  if (summaryCache.has(cacheKey)) {
-    return json({ summary: summaryCache.get(cacheKey), cached: true });
-  }
-
-  const apiKey =
-    openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) {
-    return json(
-      {
-        error:
-          "Missing API key. Add your OpenAI (sk-), Groq (gsk_), or Gemini (AIza...) API key in settings or set OPENAI_API_KEY as a Worker secret.",
-      },
-      401,
-    );
-  }
-
   try {
-    const repoUrl = repoId.includes("/")
-      ? `https://api.github.com/repos/${repoId}`
-      : `https://api.github.com/repositories/${repoId}`;
+    const repoId = url.searchParams.get("repoId");
+    if (!repoId) {
+      return json({ error: "Missing repository ID" }, 400);
+    }
 
-    const repoRes = await fetch(repoUrl, {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Trending-Digest-Worker",
-      },
-    });
+    const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
 
-    if (!repoRes.ok) throw new Error(`GitHub API error: ${repoRes.status}`);
+    const cacheKey = `${repoId}_${lang}`;
+    if (summaryCache.has(cacheKey)) {
+      return json({ summary: summaryCache.get(cacheKey), isCached: true });
+    }
 
-    const repo = await repoRes.json();
+    const apiKey =
+      openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
+    if (!apiKey) {
+      return json({ error: "Missing API key." }, 401);
+    }
+
+    const { repo, _ } = await fetchGitHubRepo(repoId, env);
 
     // Fetch and render README using the new function (with AI processing)
-    const { readmeContent, readmeHtml } = await fetchAndRenderReadme(
+    const { readmeContent, _readmeHtml } = await fetchAndRenderReadme(
       repo,
       env,
       true,
     );
 
-    let contentToSummarize = `Repository: ${repo.full_name}\n`;
+    let contentToSummarize = `Repository: ${repo.fullName}\n`;
     contentToSummarize += `Description: ${repo.description || "No description"}\n`;
+    contentToSummarize += `URL: ${repo.htmlUrl}\n`;
     contentToSummarize += `Language: ${repo.language || "Unknown"}\n`;
-    contentToSummarize += `Stars: ${repo.stargazers_count}\n`;
-    contentToSummarize += `Forks: ${repo.forks_count}\n`;
+    contentToSummarize += `Stars: ${repo.stars}\n`;
+    contentToSummarize += `Forks: ${repo.forks}\n`;
     contentToSummarize += `Topics: ${(repo.topics || []).join(", ")}\n`;
     if (readmeContent) contentToSummarize += `\nREADME:\n${readmeContent}`;
 
-    const systemPrompt = `You are a senior software engineer and technical writer reviewing GitHub repositories for a developer audience.
+    const { systemPrompt, userPrompt } = buildSummarizePrompt(
+      contentToSummarize,
+      lang,
+      repo,
+    );
 
-## Output Language
-Write the ENTIRE response in the language matching ISO code: '${lang}' — including all headings, labels, bullet points, and prose.
-
-## Response Structure (use this exact order)
-### 🔍 Overview
-One concise paragraph: what the project is, its core purpose, and the problem it solves.
-
-### ⚙️ Technical Stack
-- Primary language & runtime
-- Key frameworks, libraries, dependencies
-- Architecture pattern (e.g. microservice, CLI tool, SDK, plugin, etc.)
-
-### ✨ Key Features
-3-6 bullet points highlighting the most impactful or distinctive capabilities.
-
-### 🎯 Use Cases
-Who would use this and in what scenarios. Be specific (e.g. "backend developers needing X", not just "developers").
-
-### 📈 Traction & Signals
-Interpret the star count and forks in context of the repo's age and domain. Note any notable topics or community indicators.
-
-### 💡 Why It Stands Out
-1-2 sentences on what makes this repo notable compared to alternatives, or why it's gaining attention now.
-
-## Tone & Formatting Rules
-- Be precise and technical — avoid vague marketing language like "powerful" or "easy to use" without evidence.
-- Use **bold** only for proper nouns, library names, and critical terms.
-- Target length: 350-550 words. Prioritize clarity over completeness.
-- If README is missing or sparse, reason from the repo metadata and tech stack — clearly note when you're inferring.`;
-
-    const userPrompt = `Analyze the following GitHub repository and produce a structured technical summary for developers evaluating whether to use or follow this project.
-
-${contentToSummarize}
-
-Focus on actionable insight: what exactly does this do, how is it built, and why should a developer care?`;
-
-    let apiUrl, requestBody;
-
-    if (apiKey.startsWith("gsk_")) {
-      apiUrl = "https://api.groq.com/openai/v1/chat/completions";
-      requestBody = {
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.45,
-        max_tokens: 4096,
-      };
-    } else if (apiKey.startsWith("sk-")) {
-      apiUrl = "https://api.openai.com/v1/chat/completions";
-      requestBody = {
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.45,
-        max_tokens: 4096,
-      };
-    } else {
-      // Gemini — fixed model name (was "gemini-3-flash-preview" which doesn't exist)
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      requestBody = {
-        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { temperature: 0.45, maxOutputTokens: 4096 },
-      };
-    }
-
-    const headers = { "Content-Type": "application/json" };
-    if (!apiKey.startsWith("AIza")) {
-      headers.Authorization = `Bearer ${apiKey}`;
-    }
-
-    const aiRes = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-
-    const aiData = await aiRes.json();
-    if (aiData.error) throw new Error(aiData.error.message || "API error");
-
-    const summary = apiKey.startsWith("AIza")
-      ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
-      : aiData.choices?.[0]?.message?.content;
-
-    if (!summary) throw new Error("No content received from API");
+    const summary = await callOpenAI(systemPrompt, userPrompt, apiKey);
 
     summaryCacheSet(cacheKey, summary);
     return json({ summary, cached: false });
   } catch (error) {
-    console.error("summarize:", error);
-    return json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to generate summary.",
-      },
-      500,
-    );
+    if (error instanceof NotFoundError)
+      return json({ error: error.message }, 404);
+    if (error instanceof RateLimitError)
+      return json({ error: error.message }, 429);
+    if (error instanceof AICallError)
+      return json({ error: error.message }, 400);
+    if (error instanceof AIResponseError)
+      return json({ error: error.message }, 400);
+    if (error instanceof AINoContentError)
+      return json({ error: error.message }, 400);
+
+    console.error("Summarize error:", error);
+    return json({ error: "Failed to generate summary" }, 500);
   }
 }
 
