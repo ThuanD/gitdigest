@@ -230,6 +230,7 @@ async function fetchTrendingRepos(period, language, env) {
     repos.length === 0 ||
     Date.now() - (cached?.time ?? 0) > LIST_CACHE_TTL
   ) {
+    cacheStats.listCacheMisses++;
     const trendingUrl = `https://github.com/trending/${encodeURIComponent(language)}?since=${since}`;
 
     const res = await fetch(trendingUrl, {
@@ -248,8 +249,10 @@ async function fetchTrendingRepos(period, language, env) {
       );
     }
     listIdCaches.set(cacheKey, { time: Date.now(), repos });
+  } else {
+    cacheStats.listCacheHits++;
   }
-
+  
   return repos;
 }
 
@@ -258,8 +261,11 @@ async function fetchGitHubRepo(repoId, env) {
     const cached = repoCache.get(repoId);
 
     if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
+      cacheStats.repoCacheHits++;
       return { repo: cached.repo, isCached: true };
     }
+
+    cacheStats.repoCacheMisses++;
 
     const repoUrl = `https://api.github.com/repos/${repoId}`;
     const response = await fetch(repoUrl, {
@@ -772,8 +778,11 @@ async function handleSummarize(request, url, env) {
 
     const cacheKey = `${repoId}_${lang}`;
     if (summaryCache.has(cacheKey)) {
+      cacheStats.summaryCacheHits++;
       return json({ summary: summaryCache.get(cacheKey), isCached: true });
     }
+
+    cacheStats.summaryCacheMisses++;
 
     const apiKey =
       openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
@@ -835,8 +844,11 @@ async function handleWordCloud(request, url, env) {
     // Check cache first
     const cached = wordcloudCache.get(cacheKey);
     if (cached && Date.now() - cached.time < WORDCLOUD_CACHE_TTL) {
+      cacheStats.wordcloudCacheHits++;
       return json({ ...cached.data, isCached: true });
     }
+
+    cacheStats.wordcloudCacheMisses++;
 
     const repos = await fetchTrendingRepos(period, language, env);
 
@@ -1059,6 +1071,106 @@ function extractBasicKeywords(repos) {
   };
 }
 
+// ─── Cache Statistics Module ───────────────────────────────────────────────────
+/**
+ * Cache monitoring and statistics
+ * Track cache sizes, hit rates, and performance metrics
+ */
+
+const cacheStats = {
+  listCacheHits: 0,
+  listCacheMisses: 0,
+  summaryCacheHits: 0,
+  summaryCacheMisses: 0,
+  repoCacheHits: 0,
+  repoCacheMisses: 0,
+  wordcloudCacheHits: 0,
+  wordcloudCacheMisses: 0,
+};
+
+function getCacheStats() {
+  return {
+    listIdCaches: {
+      size: listIdCaches.size,
+      hits: cacheStats.listCacheHits,
+      misses: cacheStats.listCacheMisses,
+      hitRate: cacheStats.listCacheHits + cacheStats.listCacheMisses > 0 
+        ? (cacheStats.listCacheHits / (cacheStats.listCacheHits + cacheStats.listCacheMisses) * 100).toFixed(1)
+        : 0,
+      ttl: LIST_CACHE_TTL
+    },
+    summaryCache: {
+      size: summaryCache.size,
+      hits: cacheStats.summaryCacheHits,
+      misses: cacheStats.summaryCacheMisses,
+      hitRate: cacheStats.summaryCacheHits + cacheStats.summaryCacheMisses > 0 
+        ? (cacheStats.summaryCacheHits / (cacheStats.summaryCacheHits + cacheStats.summaryCacheMisses) * 100).toFixed(1)
+        : 0,
+      maxEntries: SUMMARY_CACHE_MAX
+    },
+    repoCache: {
+      size: repoCache.size,
+      hits: cacheStats.repoCacheHits,
+      misses: cacheStats.repoCacheMisses,
+      hitRate: cacheStats.repoCacheHits + cacheStats.repoCacheMisses > 0 
+        ? (cacheStats.repoCacheHits / (cacheStats.repoCacheHits + cacheStats.repoCacheMisses) * 100).toFixed(1)
+        : 0,
+      maxEntries: REPO_CACHE_MAX
+    },
+    wordcloudCache: {
+      size: wordcloudCache.size,
+      hits: cacheStats.wordcloudCacheHits,
+      misses: cacheStats.wordcloudCacheMisses,
+      hitRate: cacheStats.wordcloudCacheHits + cacheStats.wordcloudCacheMisses > 0 
+        ? (cacheStats.wordcloudCacheHits / (cacheStats.wordcloudCacheHits + cacheStats.wordcloudCacheMisses) * 100).toFixed(1)
+        : 0,
+      ttl: WORDCLOUD_CACHE_TTL,
+      maxEntries: WORDCLOUD_CACHE_MAX
+    }
+  };
+}
+
+function clearAllCaches() {
+  listIdCaches.clear();
+  summaryCache.clear();
+  repoCache.clear();
+  wordcloudCache.clear();
+  
+  // Reset stats
+  Object.keys(cacheStats).forEach(key => {
+    cacheStats[key] = 0;
+  });
+  
+  return { success: true, message: "All caches cleared" };
+}
+
+function clearCacheType(type) {
+  switch(type) {
+    case 'listIdCaches':
+      listIdCaches.clear();
+      cacheStats.listCacheHits = 0;
+      cacheStats.listCacheMisses = 0;
+      return { success: true, message: "List cache cleared" };
+    case 'summaryCache':
+      summaryCache.clear();
+      cacheStats.summaryCacheHits = 0;
+      cacheStats.summaryCacheMisses = 0;
+      return { success: true, message: "Summary cache cleared" };
+    case 'repoCache':
+      repoCache.clear();
+      cacheStats.repoCacheHits = 0;
+      cacheStats.repoCacheMisses = 0;
+      return { success: true, message: "Repository cache cleared" };
+    case 'wordcloudCache':
+      wordcloudCache.clear();
+      cacheStats.wordcloudCacheHits = 0;
+      cacheStats.wordcloudCacheMisses = 0;
+      return { success: true, message: "WordCloud cache cleared" };
+    default:
+      return { success: false, message: "Unknown cache type" };
+  }
+}
+
 // ─── Main Export Module ───────────────────────────────────────────────────────
 /**
  * Main Cloudflare Worker export
@@ -1097,6 +1209,36 @@ export default {
 
       if (url.pathname === "/api/wordcloud") {
         return await handleWordCloud(request, url, env);
+      }
+
+      // Admin endpoints
+      if (url.pathname === "/api/admin/stats") {
+        if (request.method === "GET") {
+          return json(getCacheStats());
+        }
+        return json({ error: "Method not allowed" }, 405);
+      }
+
+      if (url.pathname === "/api/admin/clear") {
+        if (request.method === "POST") {
+          try {
+            const body = await request.json().catch(() => ({}));
+            const cacheType = body.type;
+            
+            if (cacheType) {
+              return json(clearCacheType(cacheType));
+            } else {
+              return json(clearAllCaches());
+            }
+          } catch (error) {
+            return json({ error: "Invalid request" }, 400);
+          }
+        }
+        return json({ error: "Method not allowed" }, 405);
+      }
+
+      if (url.pathname === "/admin") {
+        return env.ASSETS.fetch(request);
       }
 
       // Serve static assets

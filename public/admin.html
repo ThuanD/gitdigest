@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="GitDigest Admin - Cache management dashboard for monitoring and clearing GitHub trending repository caches"
+    />
+    <meta name="keywords" content="admin, cache, management, GitDigest, GitHub, trending, monitoring" />
+    <meta name="author" content="ThuanD" />
+    <meta property="og:title" content="GitDigest Admin - Cache Management" />
+    <meta property="og:description" content="Monitor and manage GitHub trending repository caches with real-time statistics" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://gitdigest.td-rootx.workers.dev/admin" />
+    <meta property="og:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta property="og:site_name" content="GitDigest" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="GitDigest Admin - Cache Management" />
+    <meta name="twitter:description" content="Monitor and manage GitHub trending repository caches with real-time statistics" />
+    <meta name="twitter:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta name="twitter:creator" content="@thuandv" />
+    <link rel="canonical" href="https://gitdigest.td-rootx.workers.dev/admin" />
+    <title>Admin - GitDigest Cache Management</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Geist Sans"', "sans-serif"],
+              mono: ['"Geist Mono"', "monospace"],
+            },
+            colors: {
+              appBg: "#09090b",
+              surface: "#18181b",
+              surfaceHover: "#27272a",
+              borderSubtle: "#27272a",
+              borderHover: "#3f3f46",
+              textMain: "#e4e4e7",
+              textMuted: "#a1a1aa",
+              hn: "#ff6600",
+            },
+            animation: {
+              "fade-in": "fadeIn 0.3s ease-out forwards",
+              "pulse-slow": "pulse 3s ease-in-out infinite",
+            },
+            keyframes: {
+              fadeIn: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body {
+        overflow: auto !important;
+      }
+      .cache-card {
+        transition: all 0.2s ease;
+      }
+      .cache-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(255, 102, 0, 0.15);
+      }
+      .hit-rate-good { color: #22c55e; }
+      .hit-rate-medium { color: #f59e0b; }
+      .hit-rate-poor { color: #ef4444; }
+      .loading-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+    </style>
+  </head>
+  <body class="bg-appBg text-textMain font-sans min-h-screen antialiased">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+      <!-- Header -->
+      <header class="mb-8">
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-3">
+            <div class="w-6 h-6 rounded border border-hn/30 bg-hn/10 flex items-center justify-center">
+              <div class="w-2.5 h-2.5 rounded-full bg-hn"></div>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-textMain">
+              Cache Management
+            </h1>
+          </div>
+          <div class="flex items-center gap-3">
+            <a href="/" class="text-textMuted hover:text-textMain text-sm font-mono transition-colors">
+              ← Back to App
+            </a>
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-hn animate-pulse"></div>
+              <span id="liveStatus" class="text-xs font-mono text-textMuted">Live</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="flex flex-wrap gap-3">
+          <button id="refreshBtn" class="px-4 py-2 bg-surface hover:bg-surfaceHover border border-borderSubtle rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh Stats
+          </button>
+          <button id="clearAllBtn" class="px-4 py-2 bg-hn hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-surface disabled:text-textMuted">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Clear All Caches
+          </button>
+        </div>
+      </header>
+
+      <!-- Cache Stats Grid -->
+      <div id="cacheGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- Cache cards will be inserted here -->
+      </div>
+
+      <!-- Activity Log -->
+      <div class="bg-surface border border-borderSubtle rounded-xl p-6">
+        <h2 class="text-lg font-medium text-textMain mb-4 flex items-center gap-2">
+          <svg class="w-5 h-5 text-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Activity Log
+        </h2>
+        <div id="activityLog" class="space-y-2 max-h-40 overflow-y-auto font-mono text-xs text-textMuted">
+          <div class="loading-pulse">Loading cache statistics...</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      class CacheAdmin {
+        constructor() {
+          this.cacheTypes = ['listIdCaches', 'summaryCache', 'repoCache', 'wordcloudCache'];
+          this.init();
+        }
+
+        init() {
+          this.bindEvents();
+          this.loadStats();
+          // Auto-refresh every 30 seconds
+          setInterval(() => this.loadStats(), 30000);
+        }
+
+        bindEvents() {
+          document.getElementById('refreshBtn').addEventListener('click', () => this.loadStats());
+          document.getElementById('clearAllBtn').addEventListener('click', () => this.clearAllCaches());
+        }
+
+        async loadStats() {
+          try {
+            const response = await fetch('/api/admin/stats');
+            const stats = await response.json();
+            this.renderStats(stats);
+            this.logActivity('Cache statistics refreshed');
+          } catch (error) {
+            this.logActivity('Error loading stats: ' + error.message, 'error');
+          }
+        }
+
+        renderStats(stats) {
+          const grid = document.getElementById('cacheGrid');
+          grid.innerHTML = '';
+
+          this.cacheTypes.forEach(type => {
+            const cache = stats[type];
+            const card = this.createCacheCard(type, cache);
+            grid.appendChild(card);
+          });
+
+          // Update Clear All button state
+          const totalEntries = this.cacheTypes.reduce((sum, type) => sum + stats[type].size, 0);
+          const clearAllBtn = document.getElementById('clearAllBtn');
+          clearAllBtn.disabled = totalEntries === 0;
+          clearAllBtn.textContent = totalEntries === 0 ? 'No Cache to Clear' : `Clear All Caches (${totalEntries} entries)`;
+        }
+
+        createCacheCard(type, cache) {
+          const div = document.createElement('div');
+          div.className = 'cache-card bg-surface border border-borderSubtle rounded-xl p-6';
+          
+          const hitRateClass = parseFloat(cache.hitRate) >= 70 ? 'hit-rate-good' : 
+                               parseFloat(cache.hitRate) >= 40 ? 'hit-rate-medium' : 'hit-rate-poor';
+          
+          const displayName = this.getDisplayName(type);
+          const description = this.getDescription(type);
+
+          div.innerHTML = `
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-medium text-textMain">${displayName}</h3>
+              <span class="text-xs font-mono px-2 py-1 rounded bg-appBg border border-borderSubtle">
+                ${cache.size} entries
+              </span>
+            </div>
+            
+            <p class="text-sm text-textMuted mb-4">${description}</p>
+            
+            <div class="space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-textMuted">Cache Size</span>
+                <span class="text-sm font-mono text-textMain">${cache.size} entries</span>
+              </div>
+              
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-textMuted">Operations</span>
+                <span class="text-sm font-mono text-textMain">${cache.hits + cache.misses}</span>
+              </div>
+              
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-textMuted">Hit Rate</span>
+                <span class="text-sm font-mono ${hitRateClass}">${cache.hitRate}%</span>
+              </div>
+              
+              ${cache.ttl ? `
+                <div class="flex justify-between items-center">
+                  <span class="text-sm text-textMuted">TTL</span>
+                  <span class="text-sm font-mono text-textMain">${this.formatDuration(cache.ttl)}</span>
+                </div>
+              ` : ''}
+              
+              ${cache.maxEntries ? `
+                <div class="flex justify-between items-center">
+                  <span class="text-sm text-textMuted">Max Entries</span>
+                  <span class="text-sm font-mono text-textMain">${cache.maxEntries}</span>
+                </div>
+              ` : ''}
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-borderSubtle">
+              <button 
+                onclick="cacheAdmin.clearCache('${type}')"
+                class="w-full px-3 py-2 bg-surface hover:bg-surfaceHover border border-borderSubtle rounded-lg text-sm font-mono text-textMuted hover:text-hn transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                id="clear-${type}"
+                ${cache.size === 0 ? 'disabled' : ''}
+              >
+                Clear Cache ${cache.size === 0 ? '(Empty)' : `(${cache.size} entries)`}
+              </button>
+            </div>
+          `;
+          
+          return div;
+        }
+
+        getDisplayName(type) {
+          const names = {
+            listIdCaches: 'Trending Lists',
+            summaryCache: 'AI Summaries',
+            repoCache: 'Repository Details',
+            wordcloudCache: 'Word Cloud Analysis'
+          };
+          return names[type] || type;
+        }
+
+        getDescription(type) {
+          const descriptions = {
+            listIdCaches: 'GitHub trending repository lists with 30-minute TTL',
+            summaryCache: 'AI-generated repository summaries (max 500 entries)',
+            repoCache: 'Repository metadata and README content (max 200 entries)',
+            wordcloudCache: 'Trending technology analysis (30-minute TTL, max 100 entries)'
+          };
+          return descriptions[type] || '';
+        }
+
+        formatDuration(ms) {
+          const minutes = Math.floor(ms / 60000);
+          if (minutes < 60) return `${minutes}m`;
+          const hours = Math.floor(minutes / 60);
+          return `${hours}h ${minutes % 60}m`;
+        }
+
+        async clearCache(type) {
+          try {
+            const response = await fetch('/api/admin/clear', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+              this.logActivity(`Cleared ${this.getDisplayName(type)}`, 'success');
+              this.loadStats();
+            } else {
+              this.logActivity(`Error clearing ${type}: ${result.message}`, 'error');
+            }
+          } catch (error) {
+            this.logActivity('Error clearing cache: ' + error.message, 'error');
+          }
+        }
+
+        async clearAllCaches() {
+          if (!confirm('Are you sure you want to clear ALL caches? This action cannot be undone.')) {
+            return;
+          }
+
+          try {
+            const response = await fetch('/api/admin/clear', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({})
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+              this.logActivity('All caches cleared', 'success');
+              this.loadStats();
+            } else {
+              this.logActivity(`Error clearing all caches: ${result.message}`, 'error');
+            }
+          } catch (error) {
+            this.logActivity('Error clearing all caches: ' + error.message, 'error');
+          }
+        }
+
+        logActivity(message, type = 'info') {
+          const log = document.getElementById('activityLog');
+          const timestamp = new Date().toLocaleTimeString();
+          const div = document.createElement('div');
+          
+          const colorClass = type === 'error' ? 'text-red-400' : 
+                            type === 'success' ? 'text-green-400' : 'text-textMuted';
+          
+          div.className = colorClass;
+          div.textContent = `[${timestamp}] ${message}`;
+          
+          // Add to top of log
+          log.insertBefore(div, log.firstChild);
+          
+          // Keep only last 10 entries
+          while (log.children.length > 10) {
+            log.removeChild(log.lastChild);
+          }
+        }
+      }
+
+      // Initialize admin interface
+      const cacheAdmin = new CacheAdmin();
+    </script>
+  </body>
+</html>
