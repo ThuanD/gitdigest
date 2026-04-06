@@ -1443,14 +1443,18 @@ async function loadSummaryForRepo(repo) {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
         </div>
-        <h3 class="text-lg font-medium text-textMain mb-2">${err.message?.includes("401") ? "Invalid API Key" : "Summary Failed"}</h3>
+        <h3 class="text-lg font-medium text-textMain mb-2">${err.message?.includes("401") ? "Invalid API Key" : err.message?.includes("Forbidden") ? "API Access Denied" : "Summary Failed"}</h3>
         <p class="text-textMuted text-sm max-w-md">
           ${err.message?.includes("401") 
             ? "The API key you provided is invalid or expired. Please check your API key in settings."
+            : err.message?.includes("Forbidden")
+            ? "API access denied. Your API key may not have the correct permissions or the service is temporarily unavailable."
             : err.message?.includes("403")
             ? "API rate limit exceeded. Please try again in a few minutes."
             : err.message?.includes("429")
             ? "Too many requests. Please wait before trying again."
+            : err.message?.includes("AI API error")
+            ? `AI API error: ${err.message}`
             : "Failed to generate summary. Please check your API key and try again."}
         </p>
       </div>`;

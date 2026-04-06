@@ -667,10 +667,22 @@ async function callOpenAI(systemPrompt, userPrompt, apiKey) {
 
   if (!response.ok) {
     console.error("AI API request failed:", aiData);
-    throw new Error(`AI API request failed: ${response.status}`);
+    
+    // Forward specific error details to FE
+    let errorMessage = `AI API request failed: ${response.status}`;
+    if (aiData.error?.message) {
+      errorMessage = aiData.error.message;
+    } else if (aiData.error) {
+      errorMessage = `AI API error: ${JSON.stringify(aiData.error)}`;
+    }
+    
+    throw new Error(errorMessage);
   }
 
-  if (aiData.error) throw new Error(aiData.error.message || "API error");
+  if (aiData.error) {
+    console.error("AI API returned error:", aiData.error);
+    throw new Error(aiData.error.message || JSON.stringify(aiData.error));
+  }
 
   const data = apiKey.startsWith("AIza")
     ? aiData.candidates?.[0]?.content?.parts?.[0]?.text
