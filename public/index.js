@@ -1,6 +1,6 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const LS_READ_STATS = "readStats";
-const LS_READ_STORIES = "readStories";
+const LS_READ_REPOS = "readRepos";
 const LS_FEED_KIND = "gh_digest_feed_kind";
 const LS_PREF_LANG = "preferredLang";
 const LS_API_KEY = "openai_api_key"; // value kept for backward compat
@@ -88,9 +88,11 @@ function markdownToSafeHtml(md) {
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentLang = localStorage.getItem(LS_PREF_LANG) || "en";
 let activeCardId = null;
-let currentActiveStory = null;
+let currentActiveRepo = null;
 let currentPage = 1;
 let hideReadActive = false;
+let currentRepos = []; // Currently displayed (may be filtered)
+let allRepos = []; // All loaded repos across pages (for wordcloud)
 let feedKind = localStorage.getItem(LS_FEED_KIND) || "daily";
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -138,6 +140,19 @@ const feedKindMonthly = document.getElementById("feedKindMonthly");
 const hideReadToggle = document.getElementById("hideReadToggle");
 const toggleKnob = document.getElementById("toggleKnob");
 
+// ─── WordCloud ───────────────────────────────────────────────────────────────────
+const wordcloudBtn = document.getElementById("wordcloudBtn");
+const wordcloudClearBtn = document.getElementById("wordcloudClearBtn");
+const wordcloudModal = document.getElementById("wordcloudModal");
+const closeWordcloudBtn = document.getElementById("closeWordcloudBtn");
+const wordcloudPeriod = document.getElementById("wordcloudPeriod");
+const wordcloudCanvas = document.getElementById("wordcloudCanvas");
+const wordcloudLoading = document.getElementById("wordcloudLoading");
+const wordcloudStatus = document.getElementById("wordcloudStatus");
+const wordcloudCategories = document.getElementById("wordcloudCategories");
+const wordcloudInsights = document.getElementById("wordcloudInsights");
+const wordcloudTrends = document.getElementById("wordcloudTrends");
+
 // ─── Settings modal ───────────────────────────────────────────────────────────
 openSettingsBtn.addEventListener("click", () => {
   apiKeyInput.value = localStorage.getItem(LS_API_KEY) || "";
@@ -149,9 +164,9 @@ saveKeyBtn.addEventListener("click", () => {
   if (apiKeyInput.value.trim()) {
     localStorage.setItem(LS_API_KEY, apiKeyInput.value.trim());
     settingsModal.close();
-    if (currentActiveStory && activeCardId) {
+    if (currentActiveRepo && activeCardId) {
       handleCardClick(
-        currentActiveStory,
+        currentActiveRepo,
         document.getElementById(`card-${activeCardId}`),
       );
     }
@@ -175,9 +190,9 @@ SUPPORTED_LANGUAGES.forEach((lang) => {
 langSelect.addEventListener("change", (e) => {
   currentLang = e.target.value;
   localStorage.setItem(LS_PREF_LANG, currentLang);
-  if (currentActiveStory && activeCardId) {
+  if (currentActiveRepo && activeCardId) {
     handleCardClick(
-      currentActiveStory,
+      currentActiveRepo,
       document.getElementById(`card-${activeCardId}`),
     );
   }
@@ -194,10 +209,18 @@ function syncFeedKindButtons() {
 
 function resetReaderForFeedSwitch() {
   activeCardId = null;
-  currentActiveStory = null;
+  currentActiveRepo = null;
   feedList
-    .querySelectorAll(".story-card.is-active")
-    .forEach((el) => el.classList.remove("is-active"));
+    .querySelectorAll(".repo-card.is-active")
+    .forEach((el) => {
+      el.classList.remove("is-active");
+      // Reset check-icon opacity
+      const icon = el.querySelector(".check-icon");
+      if (icon) {
+        icon.classList.remove("opacity-100");
+        icon.classList.add("opacity-0");
+      }
+    });
   emptyState.classList.remove("hidden");
   readerWorkspace.classList.add("hidden");
   readerWorkspace.classList.remove("flex");
@@ -218,7 +241,7 @@ function setFeedKind(kind) {
   localStorage.setItem(LS_FEED_KIND, feedKind);
   resetReaderForFeedSwitch();
   currentPage = 1;
-  loadStoriesClient(1);
+  loadReposClient(1);
   syncFeedKindButtons();
 }
 
@@ -250,7 +273,7 @@ function createFeedSkeletonCard() {
   const el = document.createElement("div");
   el.setAttribute("data-feed-skeleton", "1");
   el.className =
-    "story-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
+    "repo-card bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col justify-between";
   el.innerHTML = `
     <div class="mb-3 space-y-2.5">
       <div class="ui-skeleton h-3.5 rounded-md" style="width:92%"></div>
@@ -323,17 +346,17 @@ function renderActivityGraph() {
 }
 
 // ─── Read state ───────────────────────────────────────────────────────────────
-function getReadStories() {
-  const a = safeJsonParse(localStorage.getItem(LS_READ_STORIES) || "[]", []);
+function getReadRepos() {
+  const a = safeJsonParse(localStorage.getItem(LS_READ_REPOS) || "[]", []);
   return Array.isArray(a) ? a : [];
 }
 
 function markAsRead(id) {
-  const read = getReadStories();
+  const read = getReadRepos();
   if (!read.some((x) => x === id)) {
     read.push(id);
     try {
-      localStorage.setItem(LS_READ_STORIES, JSON.stringify(read));
+      localStorage.setItem(LS_READ_REPOS, JSON.stringify(read));
 
       const stats = getReadStats();
       const d = new Date();
@@ -349,14 +372,18 @@ function markAsRead(id) {
 }
 
 function isRead(id) {
-  return getReadStories().some((x) => x === id);
+  return getReadRepos().some((x) => x === id);
 }
 
-function applyReadState(story, cardElement) {
+function applyReadState(repo, cardElement) {
   cardElement.classList.add("is-read");
   const icon = cardElement.querySelector(".check-icon");
-  if (icon) icon.classList.replace("hidden", "block");
-  markAsRead(story.id);
+  if (icon) {
+    // Use opacity classes to match renderStoriesFromIds
+    icon.classList.remove("opacity-0");
+    icon.classList.add("opacity-100");
+  }
+  markAsRead(repo.id);
 }
 
 // ─── Preferences ──────────────────────────────────────────────────────────────
@@ -393,7 +420,266 @@ function syncReaderViewToggleUi() {
   );
 }
 
-// ─── Source panel ─────────────────────────────────────────────────────────────
+// ─── README Shadow DOM Utilities ──────────────────────────────────────────────────
+function getOrCreateReadmeHost() {
+  let host = readerSourceIframeWrap.querySelector('.readme-shadow-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'readme-shadow-host';
+    host.style.cssText = "width:100%;height:100%;overflow-y:auto;";
+    readerSourceIframeWrap.appendChild(host);
+  }
+  return host;
+}
+
+function getOrCreateShadowRoot(host) {
+  let shadowRoot = host.shadowRoot;
+  if (!shadowRoot) {
+    shadowRoot = host.attachShadow({ mode: 'open' });
+  }
+  return shadowRoot;
+}
+
+function getReadmeStyles() {
+  return `
+    <style>
+      :host {
+        display: block;
+        color: #e4e4e7;
+        font-family: 'Geist Sans', sans-serif;
+        line-height: 1.7;
+        font-size: 0.9375rem;
+        background: #0c0c0e;
+        padding: 1.5rem;
+        box-sizing: border-box;
+      }
+      
+      /* GitHub-specific overrides for our dark theme */
+      h1,h2,h3,h4,h5,h6 { 
+        color: #fff !important; 
+        border-bottom-color: #27272a !important;
+        font-weight: 600;
+        margin: 1.5rem 0 0.75rem;
+        padding-bottom: 0.4rem;
+      }
+      h1 { font-size: 1.4rem; }
+      h2 { font-size: 1.2rem; }
+      h3 { font-size: 1.05rem; }
+      h4 { font-size: 0.95rem; }
+      
+      p { 
+        color: #d4d4d8 !important; 
+        margin: 0 0 1rem;
+      }
+      
+      a { 
+        color: #60a5fa !important; 
+        text-decoration: underline;
+      }
+      a:hover { 
+        color: #93c5fd !important; 
+      }
+      
+      /* GitHub badges/shields styling */
+      a img[src*="shields.io"], a img[alt*="badge"] {
+        display: inline !important;
+        vertical-align: middle !important;
+        margin: 0 2px !important;
+      }
+      
+      /* Centered div with badges should stay inline */
+      div[align="center"], div[align="center"] p {
+        text-align: center !important;
+      }
+
+      div[align="center"] a {
+        display: inline !important;
+        margin: 0 2px !important;
+      }
+
+      div[align="center"] a img,
+      div[align="center"] p a img {
+        display: inline !important;
+        vertical-align: middle !important;
+        max-width: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        margin: 2px !important;
+      }
+
+      /* General badge pattern: <p> containing only <a><img></a> */
+      p > a > img[src*="shields.io"],
+      p > a > img[src*="badge"],
+      p > a > img[src*="camo.githubusercontent"] {
+        display: inline !important;
+        vertical-align: middle !important;
+        margin: 2px !important;
+      }
+      
+      code { 
+        font-family: 'Geist Mono', monospace; 
+        font-size: 0.8125rem; 
+        background-color: #27272a !important; 
+        color: #fbbf24 !important; 
+        padding: 0.1rem 0.35rem; 
+        border-radius: 0.25rem;
+      }
+      
+      pre { 
+        background-color: #18181b !important; 
+        border: 1px solid #27272a !important; 
+        border-radius: 0.5rem; 
+        padding: 1rem; 
+        overflow-x: auto; 
+        margin: 1rem 0;
+      }
+      
+      pre code { 
+        background: transparent !important; 
+        color: #e4e4e7 !important; 
+        padding: 0;
+      }
+      
+      blockquote { 
+        border-left: 3px solid #3f3f46 !important; 
+        margin: 1rem 0; 
+        padding: 0.75rem 1rem; 
+        background-color: #18181b !important; 
+        border-radius: 0.375rem; 
+        color: #a1a1aa !important;
+      }
+      
+      table { 
+        border-collapse: collapse; 
+        width: 100%; 
+        margin: 1rem 0;
+        border-color: #27272a !important;
+      }
+      
+      th,td { 
+        border: 1px solid #27272a !important; 
+        padding: 0.5rem 0.75rem; 
+        color: #d4d4d8 !important;
+      }
+      
+      th { 
+        background-color: #27272a !important; 
+        color: #fff !important; 
+        font-weight: 600;
+      }
+      
+      hr { 
+        border: none; 
+        border-top: 1px solid #27272a !important; 
+        margin: 1.5rem 0;
+      }
+      
+      img { 
+        max-width: 100%; 
+        border-radius: 0.5rem; 
+        border: 1px solid #27272a !important; 
+        margin: 1rem 0;
+      }
+      
+      ul,ol { 
+        color: #d4d4d8 !important; 
+        padding-left: 1.5rem; 
+        margin: 0 0 1rem; 
+      }
+      
+      li { 
+        margin-bottom: 0.25rem;
+      }
+    </style>
+  `;
+}
+
+function getLoadingStyles() {
+  return `
+    <style>
+      :host {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        gap: 0.75rem;
+        padding: 2rem;
+        color: #71717a;
+        font-family: 'Geist Sans', sans-serif;
+        background: #0c0c0e;
+        box-sizing: border-box;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner {
+        width: 1rem;
+        height: 1rem;
+        animation: spin 1s linear infinite;
+      }
+    </style>
+  `;
+}
+
+function getErrorStyles() {
+  return `
+    <style>
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        gap: 1rem;
+        text-align: center;
+        color: #71717a;
+        font-family: 'Geist Sans', sans-serif;
+        background: #0c0c0e;
+        box-sizing: border-box;
+        padding: 2rem;
+      }
+      .icon {
+        width: 2rem;
+        height: 2rem;
+        color: #52525b;
+      }
+      a {
+        color: #ff8533;
+        text-decoration: underline;
+      }
+      .error-text {
+        font-size: 0.875rem;
+      }
+      .error-detail {
+        font-size: 0.75rem;
+      }
+    </style>
+  `;
+}
+
+function processReadmeLinks(shadowRoot) {
+  const links = shadowRoot.querySelectorAll('.readme-content a[href]');
+  links.forEach(link => {
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+  });
+}
+
+function getReadmeHtml(data, repo) {
+  if (data.readmeHtml) {
+    return data.readmeHtml;
+  }
+  
+  // Fallback to our own markdown parsing
+  const fullName = data.rawApiResponse?.full_name || repo.id;
+  const branch = data.rawApiResponse?.default_branch || "main";
+  const md = resolveReadmeImages(
+    data.readmeContent || "*No README available.*",
+    fullName,
+    branch,
+  );
+  return typeof marked !== "undefined" ? marked.parse(md) : markdownToSafeHtml(md);
+}
+
+// ─── README Rendering Functions ───────────────────────────────────────────────────────
 function closeSourcePanel(persistPreference) {
   sourceFramePanel.classList.add("hidden");
   sourceFramePanel.setAttribute("hidden", "");
@@ -426,138 +712,87 @@ function resolveReadmeImages(markdown, fullName, defaultBranch = "main") {
     );
 }
 
-async function openSourcePanelForStory(story, persistPreference) {
-  if (!story?.id) return;
+async function openSourcePanelForRepo(repo, persistPreference) {
+  if (!repo?.id) return;
 
-  // FIX: also remove the HTML `hidden` attribute, not just the class
+  sourceFramePanel.classList.remove("hidden");
+  readerBody.classList.add("hidden");
+  readerSourceIframeWrap.classList.remove("hidden");
   sourceFramePanel.classList.remove("hidden");
   sourceFramePanel.removeAttribute("hidden");
-  sourceFramePanel.classList.add("flex");
-  sourceFramePanel.scrollTop = 0;
 
-  // Hide summary content when opening source panel
-  readerBody.classList.add("hidden");
+  if (persistPreference) setSourceOpenPreference(true);
+  syncReaderViewToggleUi();
 
-  const cacheKey = story.id;
+  const cacheKey = repo.id;
   const cached = readmeCache.get(cacheKey);
   const now = Date.now();
 
   if (cached && now - cached.time < README_CACHE_TTL) {
-    renderReadmeContent(cached.data, story);
-    if (persistPreference) setSourceOpenPreference(true);
+    renderReadmeContent(cached.data, repo);
     syncReaderViewToggleUi();
     return;
   }
 
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-
-  readmeDiv.innerHTML = `
-    <div style="display:flex;align-items:center;gap:0.75rem;padding:2rem;color:#71717a;">
-      <svg style="width:1rem;height:1rem;animation:spin 1s linear infinite;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle style="opacity:0.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-      </svg>
-      <span style="font-size:0.8125rem;">Loading README...</span>
-    </div>`;
+  // Show loading state
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  const loadingHtml = getLoadingStyles() + `
+    <svg class="spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle style="opacity:0.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+    </svg>
+    <span style="font-size:0.8125rem;">Loading README...</span>
+  `;
+  shadowRoot.innerHTML = loadingHtml;
 
   try {
-    const res = await fetch(`/api/repo?id=${encodeURIComponent(story.id)}`);
+    const res = await fetch(`/api/repo?repoId=${encodeURIComponent(repo.id)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
     readmeCache.set(cacheKey, { data, time: now });
-    renderReadmeContent(data, story);
+    renderReadmeContent(data, repo);
   } catch (err) {
     console.error("README load failed:", err);
-    renderReadmeError(err, story);
+    renderReadmeError(err, repo);
   }
-
-  if (persistPreference) setSourceOpenPreference(true);
-  syncReaderViewToggleUi();
 }
 
-function renderReadmeContent(data, story) {
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-
-  const fullName = data.raw_api_response?.full_name || story.id;
-  const branch = data.raw_api_response?.default_branch || "main";
-  const md = resolveReadmeImages(
-    data.readme_content || "*No README available.*",
-    fullName,
-    branch,
-  );
-  const html =
-    typeof marked !== "undefined" ? marked.parse(md) : markdownToSafeHtml(md);
-
-  readmeDiv.innerHTML = `
-    <style>
-      .readme-render h1,.readme-render h2,.readme-render h3,.readme-render h4{color:#fff;font-weight:600;margin:1.5rem 0 0.75rem;padding-bottom:0.4rem;border-bottom:1px solid #27272a;}
-      .readme-render h1{font-size:1.4rem;} .readme-render h2{font-size:1.2rem;} .readme-render h3{font-size:1.05rem;} .readme-render h4{font-size:0.95rem;}
-      .readme-render p{margin:0 0 1rem;color:#d4d4d8;}
-      .readme-render a{color:#60a5fa;text-decoration:underline;} .readme-render a:hover{color:#93c5fd;}
-      .readme-render ul,.readme-render ol{color:#d4d4d8;padding-left:1.5rem;margin:0 0 1rem;} .readme-render li{margin-bottom:0.25rem;}
-      .readme-render blockquote{border-left:3px solid #3f3f46;margin:1rem 0;padding:0.75rem 1rem;background:#18181b;border-radius:0.375rem;color:#a1a1aa;}
-      .readme-render code{font-family:'Geist Mono',monospace;font-size:0.8125rem;background:#27272a;color:#fbbf24;padding:0.1rem 0.35rem;border-radius:0.25rem;}
-      .readme-render pre{background:#18181b;border:1px solid #27272a;border-radius:0.5rem;padding:1rem;overflow-x:auto;margin:1rem 0;}
-      .readme-render pre code{background:transparent;color:#e4e4e7;padding:0;}
-      .readme-render img{max-width:100%;border-radius:0.5rem;border:1px solid #27272a;margin:1rem 0;}
-      .readme-render table{border-collapse:collapse;width:100%;margin:1rem 0;}
-      .readme-render th,.readme-render td{border:1px solid #27272a;padding:0.5rem 0.75rem;color:#d4d4d8;}
-      .readme-render th{background:#27272a;color:#fff;font-weight:600;}
-      .readme-render hr{border:none;border-top:1px solid #27272a;margin:1.5rem 0;}
-      @keyframes spin{to{transform:rotate(360deg);}}
-    </style>
-    <div class="readme-render">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
-
-  readmeDiv.querySelectorAll("a[href]").forEach((a) => {
-    a.setAttribute("target", "_blank");
-    a.setAttribute("rel", "noopener noreferrer");
-  });
+function renderReadmeContent(data, repo) {
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  
+  const html = getReadmeHtml(data, repo);
+  const styles = getReadmeStyles();
+  
+  shadowRoot.innerHTML = styles + `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
+  
+  processReadmeLinks(shadowRoot);
 }
 
-function renderReadmeError(err, story) {
-  let readmeDiv = readerSourceIframeWrap.querySelector(".readme-render");
-  if (!readmeDiv) {
-    readmeDiv = document.createElement("div");
-    readmeDiv.className = "readme-render";
-    readmeDiv.style.cssText =
-      "height:100%;overflow-y:auto;padding:1.5rem;color:#e4e4e7;" +
-      "font-family:'Geist Sans',sans-serif;line-height:1.7;font-size:0.9375rem;background:#0c0c0e;";
-    readerSourceIframeWrap.appendChild(readmeDiv);
-  }
-  readmeDiv.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:1rem;text-align:center;color:#71717a;">
-      <svg style="width:2rem;height:2rem;color:#52525b;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-      </svg>
-      <p style="font-size:0.875rem;">Failed to load README</p>
-      <p style="font-size:0.75rem;">${err.message}</p>
-      <a href="${story.url}" target="_blank" rel="noopener noreferrer"
-        style="color:#ff8533;font-size:0.8125rem;text-decoration:underline;">View on GitHub ↗</a>
-    </div>`;
+function renderReadmeError(err, repo) {
+  const host = getOrCreateReadmeHost();
+  const shadowRoot = getOrCreateShadowRoot(host);
+  
+  const styles = getErrorStyles();
+  const content = `
+    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="error-text">Failed to load README</p>
+    <p class="error-detail">${err.message}</p>
+    <a href="${repo.url}" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+  `;
+  
+  shadowRoot.innerHTML = styles + content;
 }
 
 function toggleSourcePanelFromUi() {
-  if (!currentActiveStory?.id) return;
+  if (!currentActiveRepo?.id) return;
   if (!sourceFramePanel.classList.contains("hidden")) closeSourcePanel(true);
-  else void openSourcePanelForStory(currentActiveStory, true);
+  else void openSourcePanelForRepo(currentActiveRepo, true);
 }
 
 // ─── Comments / Issues panel ──────────────────────────────────────────────────
@@ -567,13 +802,13 @@ function syncCommentsButtonUi() {
   readerIssuesBtn.setAttribute("aria-pressed", open ? "true" : "false");
 }
 
-function openCommentsPanelForStory(story, persistPreference) {
-  if (!story) return;
+function openCommentsPanelForRepo(repo, persistPreference) {
+  if (!repo) return;
   commentsPane.classList.remove("hidden");
   commentsPane.classList.add("flex");
   if (window.innerWidth < 768) commentsBackdrop.classList.remove("hidden");
-  commentsExternalLink.href = `${story.url}/issues`;
-  loadGitHubIssues(story.id, commentsBody);
+  commentsExternalLink.href = `${repo.url}/issues`;
+  loadGitHubIssues(repo.id, commentsBody);
   if (persistPreference) setCommentsOpenPreference(true);
   syncCommentsButtonUi();
 }
@@ -605,7 +840,7 @@ async function loadGitHubIssues(repoId, container) {
       return;
     }
 
-    const issuesRes = await fetch(`/api/issues?owner=${owner}&repo=${repo}`);
+    const issuesRes = await fetch(`/api/issues?repoId=${repoId}`);
     if (!issuesRes.ok)
       throw new Error(`Failed to fetch issues: ${issuesRes.status}`);
 
@@ -683,7 +918,7 @@ async function loadGitHubIssues(repoId, container) {
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
 function visibleFeedCards() {
   return Array.from(
-    feedList.querySelectorAll(".story-card[id^='card-']"),
+    feedList.querySelectorAll(".repo-card[id^='card-']"),
   ).filter((el) => el.offsetParent !== null);
 }
 
@@ -712,15 +947,15 @@ function navigateFeedByArrow(delta) {
 }
 
 function toggleCommentsKeyboard() {
-  if (!currentActiveStory) return;
+  if (!currentActiveRepo) return;
   if (!commentsPane.classList.contains("hidden")) closeCommentsPanel(true);
-  else openCommentsPanelForStory(currentActiveStory, true);
+  else openCommentsPanelForRepo(currentActiveRepo, true);
 }
 
-function openCurrentStoryInNewTab() {
-  if (!currentActiveStory?.url) return;
+function openCurrentRepoInNewTab() {
+  if (!currentActiveRepo?.url) return;
   try {
-    const u = new URL(currentActiveStory.url);
+    const u = new URL(currentActiveRepo.url);
     if (u.protocol === "http:" || u.protocol === "https:") {
       window.open(u.href, "_blank", "noopener,noreferrer");
     }
@@ -776,7 +1011,7 @@ document.addEventListener("keydown", (e) => {
     !e.metaKey &&
     !e.altKey
   ) {
-    if (!currentActiveStory?.url) return;
+    if (!currentActiveRepo?.url) return;
     e.preventDefault();
     toggleSourcePanelFromUi();
     return;
@@ -787,30 +1022,30 @@ document.addEventListener("keydown", (e) => {
     !e.metaKey &&
     !e.altKey
   ) {
-    if (!currentActiveStory?.url) return;
+    if (!currentActiveRepo?.url) return;
     e.preventDefault();
-    openCurrentStoryInNewTab();
+    openCurrentRepoInNewTab();
   }
 });
 
 // ─── View toggle buttons ──────────────────────────────────────────────────────
 readerViewSummaryBtn.addEventListener("click", async () => {
-  if (!currentActiveStory?.url) return;
+  if (!currentActiveRepo?.url) return;
   if (!sourceFramePanel.classList.contains("hidden")) {
     closeSourcePanel(true);
-    await loadSummaryForStory(currentActiveStory);
+    await loadSummaryForRepo(currentActiveRepo);
   }
 });
 
 readerViewSourceBtn.addEventListener("click", () => {
-  if (!currentActiveStory?.url) return;
+  if (!currentActiveRepo?.url) return;
   if (sourceFramePanel.classList.contains("hidden")) {
-    void openSourcePanelForStory(currentActiveStory, true);
+    void openSourcePanelForRepo(currentActiveRepo, true);
   }
 });
 
 readerIssuesBtn.addEventListener("click", () => {
-  if (!currentActiveStory) return;
+  if (!currentActiveRepo) return;
   toggleCommentsKeyboard();
 });
 
@@ -825,14 +1060,14 @@ mobileBackBtn.addEventListener("click", () => {
 // ─── Load more ────────────────────────────────────────────────────────────────
 loadMoreBtn.addEventListener("click", () => {
   currentPage++;
-  loadStoriesClient(currentPage);
+  loadReposClient(currentPage);
 });
 
-// ─── Stories loader (FIXED: pagination now actually fetches for all pages) ────
-async function loadStoriesClient(page = 1) {
+// ─── Repos loader ────
+async function loadReposClient(page = 1) {
   loadMoreBtn.disabled = true;
   loadMoreBtn.innerHTML = `${SPINNER_SVG}<span>Loading…</span>`;
-  
+
   // Add loading status
   statusDot.classList.add("animate-pulse");
   statusTextEl.textContent = "Loading…";
@@ -846,14 +1081,15 @@ async function loadStoriesClient(page = 1) {
   }
 
   try {
-    const res = await fetch(`/api/stories?period=${feedKind}&page=${page}`);
+    const res = await fetch(`/api/repos?period=${feedKind}&page=${page}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
     feedList
       .querySelectorAll("[data-feed-skeleton]")
       .forEach((el) => el.remove());
-    renderStoriesFromIds(data.stories || []);
+    renderReposFromIds(data.repos || [], page);
 
     if (data.hasMore) {
       loadMoreBtn.classList.remove("hidden");
@@ -868,12 +1104,12 @@ async function loadStoriesClient(page = 1) {
       statusTextEl.textContent = "Live";
     }
   } catch (e) {
-    console.error("Load stories error:", e);
-    
+    console.error("Load repos error:", e);
+
     // Remove loading status
     statusDot.classList.remove("animate-pulse");
     statusTextEl.textContent = "Error";
-    
+
     feedList
       .querySelectorAll("[data-feed-skeleton]")
       .forEach((el) => el.remove());
@@ -892,65 +1128,73 @@ async function loadStoriesClient(page = 1) {
   }
 }
 
-// Extracted from loadStoriesClient so pagination can call it correctly
-function renderStoriesFromIds(stories) {
+// Extracted from loadReposClient so pagination can call it correctly
+function renderReposFromIds(repos, page = 1) {
+  if (page === 1) {
+    allRepos = repos;
+  } else {
+    allRepos = [...allRepos, ...repos];
+  }
+  currentRepos = allRepos;
+  feedList.innerHTML = "";
+
   const frag = document.createDocumentFragment();
-  stories.forEach((story, i) => {
+  repos.forEach((repo, i) => {
     const card = document.createElement("div");
     card.style.animationDelay = `${i * 20}ms`;
-    card.id = `card-${story.id}`;
+    card.id = `card-${repo.id}`;
 
-    const readClass = isRead(story.id) ? "is-read" : "";
-    const activeClass = activeCardId === story.id ? "is-active" : "";
-    card.className = `story-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
+    const readClass = isRead(repo.id) ? "is-read" : "";
+    const activeClass = activeCardId === repo.id ? "is-active" : "";
+    card.className = `repo-card bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col justify-between group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
 
     let scoreColor = "text-textMuted";
-    if (story.score > 500) scoreColor = "text-hn";
-    else if (story.score > 100) scoreColor = "text-amber-500";
+    if (repo.stars > 500) scoreColor = "text-hn";
+    else if (repo.stars > 100) scoreColor = "text-amber-500";
 
-    const titleSafe = escapeHtml(story.title);
+    const titleSafe = escapeHtml(repo.fullName);
 
     card.innerHTML = `
       <div class="flex justify-between items-start mb-3">
         <h3 class="font-medium text-[14px] leading-snug text-textMain group-hover:text-white transition-colors pr-2">${titleSafe}</h3>
-        <div class="check-icon ${activeCardId === story.id ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
+        <div class="check-icon ${isRead(repo.id) ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
         </div>
       </div>
-      <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(story.description || "")}</div>
+      <div class="text-sm text-textMuted leading-snug mb-3 line-clamp-2">${escapeHtml(repo.description || "")}</div>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3 text-xs">
           <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-label="star">
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
             </svg>
-            <span class="${scoreColor}">${story.score}</span>
+            <span class="${scoreColor}">${repo.stars}</span>
           </div>
           ${
-            story.language
+            repo.language
               ? `
           <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="programming language">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
             </svg>
-            <span class="font-mono">${escapeHtml(story.language)}</span>
+            <span class="font-mono">${escapeHtml(repo.language)}</span>
           </div>`
               : ""
           }
           <div class="flex items-center gap-1.5 text-textMuted/70">
-            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="fork">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
             </svg>
-            <span class="font-mono">${story.forks ?? 0}</span>
+            <span class="font-mono">${repo.forks ?? 0}</span>
           </div>
         </div>
         <span class="text-xs text-textMuted font-mono">github.com</span>
       </div>`;
 
-    card.addEventListener("click", () => handleCardClick(story, card));
+    card.addEventListener("click", () => handleCardClick(repo, card));
     frag.appendChild(card);
   });
   feedList.appendChild(frag);
@@ -972,13 +1216,21 @@ function applyBlankTargets(root) {
 }
 
 // ─── Card click / reader ──────────────────────────────────────────────────────
-async function handleCardClick(story, cardElement) {
+async function handleCardClick(repo, cardElement) {
   if (activeCardId) {
     const oldCard = document.getElementById(`card-${activeCardId}`);
-    if (oldCard) oldCard.classList.remove("is-active");
+    if (oldCard) {
+      oldCard.classList.remove("is-active");
+      // Reset check-icon opacity for old card
+      const oldIcon = oldCard.querySelector(".check-icon");
+      if (oldIcon) {
+        oldIcon.classList.remove("opacity-100");
+        oldIcon.classList.add("opacity-0");
+      }
+    }
   }
-  activeCardId = story.id;
-  currentActiveStory = story;
+  activeCardId = repo.id;
+  currentActiveRepo = repo;
   cardElement.classList.add("is-active");
 
   if (window.innerWidth < 768) {
@@ -994,7 +1246,7 @@ async function handleCardClick(story, cardElement) {
   readerContent.classList.add("flex", "flex-col");
 
   if (getCommentsOpenPreference()) {
-    openCommentsPanelForStory(story, false);
+    openCommentsPanelForRepo(repo, false);
   } else {
     closeCommentsPanel(false);
   }
@@ -1003,16 +1255,16 @@ async function handleCardClick(story, cardElement) {
   setReaderViewToggleVisible(false);
 
   readerBody.classList.remove("animate-reader-in", "opacity-50");
-  readerTitle.textContent = story.title;
+  readerTitle.textContent = repo.title;
   readerBody.innerHTML = "";
 
   let sourceUrlOk = false;
-  let sourceHrefForStory = "";
-  if (story.url) {
+  let sourceHrefForRepo = "";
+  if (repo.url) {
     try {
-      const u = new URL(story.url);
+      const u = new URL(repo.url);
       if (u.protocol === "http:" || u.protocol === "https:") {
-        sourceHrefForStory = u.href;
+        sourceHrefForRepo = u.href;
         sourceUrlOk = true;
       }
     } catch {
@@ -1021,12 +1273,12 @@ async function handleCardClick(story, cardElement) {
   }
 
   if (sourceUrlOk) {
-    readerTitleSourceLink.href = sourceHrefForStory;
-    readerTitleSourceLink.textContent = sourceHrefForStory;
+    readerTitleSourceLink.href = sourceHrefForRepo;
+    readerTitleSourceLink.textContent = sourceHrefForRepo;
     readerTitleSourceLink.classList.remove("hidden");
     setReaderViewToggleVisible(true);
     if (getSourceOpenPreference()) {
-      await openSourcePanelForStory(story, false);
+      await openSourcePanelForRepo(repo, false);
     } else {
       syncReaderViewToggleUi();
     }
@@ -1038,29 +1290,23 @@ async function handleCardClick(story, cardElement) {
 
   // Show Issues toggle button (only load when panel is actually opened)
   readerCommentsToggleWrap.classList.remove("hidden");
-  commentsExternalLink.href = `${story.url}/issues`;
+  commentsExternalLink.href = `${repo.url}/issues`;
 
   readerContent.scrollTop = 0;
 
   // Load content based on user preference
   if (getSourceOpenPreference()) {
-    // User prefers source, but summary is loaded by default
-    // So we need to switch to source after loading summary
-    await loadSummaryForStory(story);
-    // Then switch to source panel
-    if (!sourceFramePanel.classList.contains("hidden")) {
-      closeSourcePanel(false);
-    }
-    await openSourcePanelForStory(story, false);
+    // User prefers source - go directly to source panel
+    await openSourcePanelForRepo(repo, false);
   } else {
-    // User prefers summary, load it
-    await loadSummaryForStory(story);
+    // User prefers summary - load summary
+    await loadSummaryForRepo(repo);
   }
 }
 
 // ─── Summary loader ───────────────────────────────────────────────────────────
-async function loadSummaryForStory(story) {
-  const localCacheKey = `summary_${story.id}_${currentLang}`;
+async function loadSummaryForRepo(repo) {
+  const localCacheKey = `summary_${repo.id}_${currentLang}`;
   const browserCachedSummary = localStorage.getItem(localCacheKey);
 
   if (browserCachedSummary) {
@@ -1070,11 +1316,11 @@ async function loadSummaryForStory(story) {
     readerBody.classList.remove("hidden");
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
-    
+
     // Mark as read when loading from cache too
-    const activeCard = document.getElementById(`card-${story.id}`);
-    if (activeCard) applyReadState(story, activeCard);
-    
+    const activeCard = document.getElementById(`card-${repo.id}`);
+    if (activeCard) applyReadState(repo, activeCard);
+
     return;
   }
 
@@ -1089,7 +1335,7 @@ async function loadSummaryForStory(story) {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const res = await fetch(
-      `/api/summarize?id=${encodeURIComponent(story.id)}&lang=${encodeURIComponent(currentLang)}`,
+      `/api/summarize?repoId=${encodeURIComponent(repo.id)}&lang=${encodeURIComponent(currentLang)}`,
       { headers },
     );
     const data = await res.json().catch(() => ({}));
@@ -1115,10 +1361,10 @@ async function loadSummaryForStory(story) {
     const summary = data.summary;
     if (!summary) throw new Error("Empty summary");
 
-    const statusLabel = data.cached
+    const statusLabel = data.isCached
       ? `Server cache${summaryStatusLangSuffix()}`
       : `Generated${summaryStatusLangSuffix()}`;
-    const dotClass = data.cached ? "bg-hn" : "bg-green-500";
+    const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`;
     readerBody.classList.remove("opacity-50");
     readerBody.innerHTML = markdownToSafeHtml(summary);
@@ -1132,8 +1378,8 @@ async function loadSummaryForStory(story) {
       /* storage full */
     }
 
-    const activeCard = document.getElementById(`card-${story.id}`);
-    if (activeCard) applyReadState(story, activeCard);
+    const activeCard = document.getElementById(`card-${repo.id}`);
+    if (activeCard) applyReadState(repo, activeCard);
   } catch (err) {
     console.error(err);
     readerBody.classList.remove("opacity-50");
@@ -1151,6 +1397,211 @@ async function loadSummaryForStory(story) {
   }
 }
 
+// ─── WordCloud ───────────────────────────────────────────────────────────────────
+wordcloudBtn.addEventListener("click", () => {
+  wordcloudModal.showModal();
+  loadWordCloud();
+});
+
+wordcloudClearBtn.addEventListener("click", () => {
+  renderReposFromIds(allRepos, 1);
+  statusTextEl.textContent = "Live";
+  wordcloudClearBtn.disabled = true;
+});
+
+closeWordcloudBtn.addEventListener("click", () => wordcloudModal.close());
+
+async function loadWordCloud() {
+  try {
+    // Show loading
+    wordcloudCanvas.style.display = "none";
+    wordcloudLoading.classList.remove("hidden");
+    wordcloudLoading.classList.add("flex");
+    wordcloudStatus.textContent = "Analyzing…";
+
+    const period = feedKind;
+    document.getElementById("wordcloudPeriodLabel").textContent = period;
+    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+    const headers = {};
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const res = await fetch(`/api/wordcloud?period=${period}&lang=`, {
+      headers,
+    });
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    // Update status
+    wordcloudStatus.textContent = data.isCached ? "From cache" : "Generated";
+
+    // Render wordcloud
+    renderWordCloud(data.words);
+
+    // Render insights
+    renderWordCloudInsights(data);
+  } catch (error) {
+    console.error("WordCloud load error:", error);
+    wordcloudStatus.textContent = "Error";
+    wordcloudLoading.classList.add("hidden");
+    wordcloudLoading.classList.remove("flex");
+    // Show error placeholder on canvas
+    const ctx = wordcloudCanvas.getContext("2d");
+    wordcloudCanvas.style.display = "block";
+    ctx.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
+    ctx.fillStyle = "#a1a1aa";
+    ctx.font = "14px Geist Sans, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      error.message?.includes("401")
+        ? "API key required"
+        : "Failed to load — try again",
+      wordcloudCanvas.width / 2,
+      wordcloudCanvas.height / 2,
+    );
+  }
+}
+
+function renderWordCloud(words) {
+  wordcloudLoading.classList.add("hidden");
+  wordcloudLoading.classList.remove("flex");
+  wordcloudCanvas.style.display = "block";
+
+  // Resize canvas to match container so wordcloud fills the space
+  const container = wordcloudCanvas.parentElement;
+  wordcloudCanvas.width = Math.max(container.clientWidth - 32, 300);
+  wordcloudCanvas.height = 400;
+
+  // Prepare data for wordcloud2
+  const wordList = words.map((word) => [word.text, word.size]);
+
+  // Configure wordcloud
+  WordCloud(wordcloudCanvas, {
+    list: wordList,
+    gridSize: Math.round(wordcloudCanvas.width / 60),
+    weightFactor: Math.round(wordcloudCanvas.width / 150),
+    fontFamily: '"Geist Sans", sans-serif',
+    color: function (word, weight) {
+      // Color based on category
+      const wordData = words.find((w) => w.text === word);
+      if (wordData) {
+        switch (wordData.category) {
+          case "language":
+            return "#60a5fa"; // blue
+          case "framework":
+            return "#34d399"; // green
+          case "domain":
+            return "#f59e0b"; // amber
+          case "concept":
+            return "#a78bfa"; // purple
+          default:
+            return "#e4e4e7"; // gray
+        }
+      }
+      return "#e4e4e7";
+    },
+    rotateRatio: 0.3,
+    rotationSteps: 2,
+    backgroundColor: "transparent",
+    click: function (item) {
+      if (item && item[0]) {
+        handleWordCloudClick(item[0]);
+      }
+    },
+  });
+}
+
+function renderWordCloudInsights(data) {
+  // Categories
+  if (data.categories) {
+    const categoriesHtml = Object.entries(data.categories)
+      .map(
+        ([key, value]) => `
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-textMuted capitalize">${key}</span>
+          <span class="text-xs font-mono text-hn">${value.count || 0}</span>
+        </div>
+      `,
+      )
+      .join("");
+    wordcloudCategories.innerHTML = categoriesHtml;
+  }
+
+  // Insights
+  if (data.insights && data.insights.length > 0) {
+    const insightsHtml = data.insights
+      .map(
+        (insight) =>
+          `<li class="flex items-start gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn mt-1.5 shrink-0"></span><span>${insight}</span></li>`,
+      )
+      .join("");
+    wordcloudInsights.innerHTML = insightsHtml;
+  }
+
+  // Trends
+  if (data.trends) {
+    const trendsHtml = `
+      ${
+        data.trends.emerging && data.trends.emerging.length > 0
+          ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">🚀 Emerging</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.emerging.map((trend) => `<span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full">${trend}</span>`).join("")}
+          </div>
+        </div>
+      `
+          : ""
+      }
+      ${
+        data.trends.established && data.trends.established.length > 0
+          ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">💪 Established</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.established.map((trend) => `<span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded-full">${trend}</span>`).join("")}
+          </div>
+        </div>
+      `
+          : ""
+      }
+      ${
+        data.trends.rising && data.trends.rising.length > 0
+          ? `
+        <div>
+          <h4 class="text-xs font-medium text-textMain mb-2">📈 Rising</h4>
+          <div class="flex flex-wrap gap-1">
+            ${data.trends.rising.map((trend) => `<span class="px-2 py-1 bg-amber-500/20 text-amber-400 text-xs rounded-full">${trend}</span>`).join("")}
+          </div>
+        </div>
+      `
+          : ""
+      }
+    `;
+    wordcloudTrends.innerHTML = trendsHtml;
+  }
+}
+
+function handleWordCloudClick(word) {
+  const pool = allRepos.length > 0 ? allRepos : currentRepos;
+  const lw = word.toLowerCase();
+  const filteredRepos = pool.filter(
+    (s) =>
+      s.description?.toLowerCase().includes(lw) ||
+      s.language?.toLowerCase().includes(lw) ||
+      s.title?.toLowerCase().includes(lw),
+  );
+
+  wordcloudModal.close();
+
+  if (filteredRepos.length === 0) return;
+
+  const savedAll = allRepos;
+  renderReposFromIds(filteredRepos, 1);
+  allRepos = savedAll;
+
+  wordcloudClearBtn.disabled = false;
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 renderActivityGraph();
-loadStoriesClient();
+loadReposClient();
