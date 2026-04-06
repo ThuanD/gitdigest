@@ -114,6 +114,7 @@ const readerTitle = document.getElementById("readerTitle");
 const readerTitleSourceLink = document.getElementById("readerTitleSourceLink");
 const readerStatus = document.getElementById("readerStatus");
 const readerBody = document.getElementById("readerBody");
+const readerPostSlot = document.getElementById("readerPostSlot");
 const readerViewToggle = document.getElementById("readerViewToggle");
 const readerViewSummaryBtn = document.getElementById("readerViewSummaryBtn");
 const readerViewSourceBtn = document.getElementById("readerViewSourceBtn");
@@ -210,17 +211,15 @@ function syncFeedKindButtons() {
 function resetReaderForFeedSwitch() {
   activeCardId = null;
   currentActiveRepo = null;
-  feedList
-    .querySelectorAll(".repo-card.is-active")
-    .forEach((el) => {
-      el.classList.remove("is-active");
-      // Reset check-icon opacity
-      const icon = el.querySelector(".check-icon");
-      if (icon) {
-        icon.classList.remove("opacity-100");
-        icon.classList.add("opacity-0");
-      }
-    });
+  feedList.querySelectorAll(".repo-card.is-active").forEach((el) => {
+    el.classList.remove("is-active");
+    // Reset check-icon opacity
+    const icon = el.querySelector(".check-icon");
+    if (icon) {
+      icon.classList.remove("opacity-100");
+      icon.classList.add("opacity-0");
+    }
+  });
   emptyState.classList.remove("hidden");
   readerWorkspace.classList.add("hidden");
   readerWorkspace.classList.remove("flex");
@@ -233,6 +232,7 @@ function resetReaderForFeedSwitch() {
   readerTitleSourceLink.removeAttribute("href");
   readerTitleSourceLink.textContent = "";
   readerTitleSourceLink.classList.add("hidden");
+  document.getElementById("readerChat")?.remove();
 }
 
 function setFeedKind(kind) {
@@ -422,10 +422,10 @@ function syncReaderViewToggleUi() {
 
 // ─── README Shadow DOM Utilities ──────────────────────────────────────────────────
 function getOrCreateReadmeHost() {
-  let host = readerSourceIframeWrap.querySelector('.readme-shadow-host');
+  let host = readerSourceIframeWrap.querySelector(".readme-shadow-host");
   if (!host) {
-    host = document.createElement('div');
-    host.className = 'readme-shadow-host';
+    host = document.createElement("div");
+    host.className = "readme-shadow-host";
     host.style.cssText = "width:100%;height:100%;overflow-y:auto;";
     readerSourceIframeWrap.appendChild(host);
   }
@@ -435,7 +435,7 @@ function getOrCreateReadmeHost() {
 function getOrCreateShadowRoot(host) {
   let shadowRoot = host.shadowRoot;
   if (!shadowRoot) {
-    shadowRoot = host.attachShadow({ mode: 'open' });
+    shadowRoot = host.attachShadow({ mode: "open" });
   }
   return shadowRoot;
 }
@@ -656,10 +656,10 @@ function getErrorStyles() {
 }
 
 function processReadmeLinks(shadowRoot) {
-  const links = shadowRoot.querySelectorAll('.readme-content a[href]');
-  links.forEach(link => {
-    link.setAttribute('target', '_blank');
-    link.setAttribute('rel', 'noopener noreferrer');
+  const links = shadowRoot.querySelectorAll(".readme-content a[href]");
+  links.forEach((link) => {
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
   });
 }
 
@@ -667,7 +667,7 @@ function getReadmeHtml(data, repo) {
   if (data.readmeHtml) {
     return data.readmeHtml;
   }
-  
+
   // Fallback to our own markdown parsing
   const fullName = data.rawApiResponse?.fullName || repo.id;
   const branch = data.rawApiResponse?.defaultBranch || "main";
@@ -676,7 +676,9 @@ function getReadmeHtml(data, repo) {
     fullName,
     branch,
   );
-  return typeof marked !== "undefined" ? marked.parse(md) : markdownToSafeHtml(md);
+  return typeof marked !== "undefined"
+    ? marked.parse(md)
+    : markdownToSafeHtml(md);
 }
 
 // ─── README Rendering Functions ───────────────────────────────────────────────────────
@@ -684,6 +686,7 @@ function closeSourcePanel(persistPreference) {
   sourceFramePanel.classList.add("hidden");
   sourceFramePanel.setAttribute("hidden", "");
   readerBody.classList.remove("hidden");
+  document.getElementById("readerChat")?.classList.remove("hidden");
   readerSourceIframeWrap.classList.remove("hidden");
   if (persistPreference) setSourceOpenPreference(false);
   syncReaderViewToggleUi();
@@ -717,6 +720,7 @@ async function openSourcePanelForRepo(repo, persistPreference) {
 
   sourceFramePanel.classList.remove("hidden");
   readerBody.classList.add("hidden");
+  document.getElementById("readerChat")?.classList.add("hidden");
   readerSourceIframeWrap.classList.remove("hidden");
   sourceFramePanel.classList.remove("hidden");
   sourceFramePanel.removeAttribute("hidden");
@@ -737,7 +741,9 @@ async function openSourcePanelForRepo(repo, persistPreference) {
   // Show loading state
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
-  const loadingHtml = getLoadingStyles() + `
+  const loadingHtml =
+    getLoadingStyles() +
+    `
     <svg class="spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
       <circle style="opacity:0.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
       <path style="opacity:0.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
@@ -763,23 +769,25 @@ async function openSourcePanelForRepo(repo, persistPreference) {
 function renderReadmeContent(data, repo) {
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
-  
+
   const html = getReadmeHtml(data, repo);
   const styles = getReadmeStyles();
-  
-  shadowRoot.innerHTML = styles + `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
-  
+
+  shadowRoot.innerHTML =
+    styles +
+    `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
+
   processReadmeLinks(shadowRoot);
 }
 
 function renderReadmeError(err, repo) {
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
-  
+
   // Use consistent error format
   let errorMessage = "Failed to load README";
   let errorHint = "";
-  
+
   if (err.message?.includes("403")) {
     errorMessage = "GitHub API rate limit exceeded";
     errorHint = "Please wait a few minutes before trying again";
@@ -793,7 +801,7 @@ function renderReadmeError(err, repo) {
     errorMessage = "Repository data corrupted";
     errorHint = "Please refresh the repository list";
   }
-  
+
   const styles = getErrorStyles();
   const content = `
     <div class="text-center py-8">
@@ -806,7 +814,7 @@ function renderReadmeError(err, repo) {
       <button onclick="loadGitHubRepo('${repo.id}')" class="text-xs text-hn hover:underline ml-2">Retry ↻</button>
     </div>
   `;
-  
+
   shadowRoot.innerHTML = styles + content;
 }
 
@@ -927,10 +935,10 @@ async function loadGitHubIssues(repoId, container) {
     container.appendChild(footerEl);
   } catch (error) {
     console.error("Failed to load GitHub issues:", error);
-    
+
     let errorMessage = "Failed to load issues";
     let errorHint = "";
-    
+
     if (error.message?.includes("403")) {
       errorMessage = "GitHub API rate limit exceeded";
       errorHint = "Please wait a few minutes before trying again";
@@ -941,7 +949,7 @@ async function loadGitHubIssues(repoId, container) {
       errorMessage = "Authentication failed";
       errorHint = "Check your GitHub token configuration";
     }
-    
+
     container.innerHTML = `
       <div class="text-center py-8">
         <p class="text-sm text-textMuted mb-2">${errorMessage}</p>
@@ -1142,11 +1150,11 @@ async function loadReposClient(page = 1) {
     }
   } catch (e) {
     console.error("Load repos error:", e);
-    
+
     // Use consistent error format
     let errorMessage = "Failed to load repositories";
     let errorHint = "";
-    
+
     if (e.message?.includes("403")) {
       errorMessage = "GitHub API rate limit exceeded";
       errorHint = "Please wait a few minutes before trying again";
@@ -1310,6 +1318,7 @@ async function handleCardClick(repo, cardElement) {
   readerBody.classList.remove("animate-reader-in", "opacity-50");
   readerTitle.textContent = repo.title;
   readerBody.innerHTML = "";
+  document.getElementById("readerChat")?.remove();
 
   let sourceUrlOk = false;
   let sourceHrefForRepo = "";
@@ -1369,6 +1378,7 @@ async function loadSummaryForRepo(repo) {
     readerBody.classList.remove("hidden");
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
+    renderChatSection(repo);
 
     // Mark as read when loading from cache too
     const activeCard = document.getElementById(`card-${repo.id}`);
@@ -1397,9 +1407,13 @@ async function loadSummaryForRepo(repo) {
       // Worker always includes errorCode; fall back to HTTP status inference.
       const errorCode =
         data.errorCode ||
-        (res.status === 401 ? "no_api_key" :
-         res.status === 429 ? "rate_limit" :
-         res.status === 404 ? "not_found" : "server_error");
+        (res.status === 401
+          ? "no_api_key"
+          : res.status === 429
+            ? "rate_limit"
+            : res.status === 404
+              ? "not_found"
+              : "server_error");
       renderSummaryError(errorCode, data.error);
       return;
     }
@@ -1414,6 +1428,7 @@ async function loadSummaryForRepo(repo) {
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`;
     readerBody.classList.remove("opacity-50");
     readerBody.innerHTML = markdownToSafeHtml(summary);
+    renderChatSection(repo);
     applyBlankTargets(readerBody);
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
@@ -1432,72 +1447,93 @@ async function loadSummaryForRepo(repo) {
   }
 }
 
-// ─── Summary error rendering ──────────────────────────────────────────────────
+// ─── Chat (preset questions) ───────────────────────────────────────────────────
+const CHAT_QUESTIONS = [
+  { id: "trending_analysis", label: "🔥 Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives." },
+  { id: "fork_utility", label: "🍴 What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?" },
+  { id: "practicality", label: "🏭 Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today." },
+  { id: "tech_stack", label: "🏗️ What are the core technologies and key architectural decisions in this project? How are the main components decoupled or integrated? Highlight anything unconventional or particularly elegant." },
+  { id: "quick_start", label: "🚀 What is the fastest way to get a working demo running locally? Are there any hidden prerequisites, non-obvious setup steps, or common stumbling blocks a developer should know before starting?" },
+  { id: "best_practices", label: "🎓 What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?" },
+  { id: "limitations", label: "⚠️ What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it." },
+  { id: "issue_health", label: "🐛 Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?" },
+];
+
+// In-memory cache: "repoId_questionId_lang" → answer string
+const answerCache = new Map();
+// ─── Summary / Chat error map ─────────────────────────────────────────────────
+const ERROR_MAP = {
+  no_api_key: {
+    title: "API Key Required",
+    hint: "Add your OpenAI, Groq, or Gemini API key in Settings to generate summaries.",
+    action: "settings",
+    statusText: "Add API key in settings",
+    statusColor: "bg-amber-500",
+  },
+  invalid_api_key: {
+    title: "Invalid API Key",
+    hint: "The key you provided was rejected by the AI provider. Please check it in Settings.",
+    action: "settings",
+    statusText: "Invalid API key — check settings",
+    statusColor: "bg-amber-500",
+  },
+  rate_limit: {
+    title: "Rate Limit Reached",
+    hint: "Your API key has hit its request-rate limit. Wait a moment, then try again.",
+    action: null,
+    statusText: "Rate limit — try again shortly",
+    statusColor: "bg-yellow-500",
+  },
+  quota_exceeded: {
+    title: "API Quota Exceeded",
+    hint: "Your API key has run out of credits or reached its monthly quota. Check your billing in the provider dashboard.",
+    action: null,
+    statusText: "Quota exceeded",
+    statusColor: "bg-red-500",
+  },
+  forbidden: {
+    title: "API Access Denied",
+    hint: "The API key does not have permission for this operation, or the provider has blocked the request.",
+    action: null,
+    statusText: "Access denied",
+    statusColor: "bg-red-500",
+  },
+  not_found: {
+    title: "Repository Not Found",
+    hint: "GitHub could not find this repository.",
+    action: null,
+    statusText: "Repository not found",
+    statusColor: "bg-red-500",
+  },
+  github_rate_limit: {
+    title: "GitHub Rate Limit",
+    hint: "GitHub's API is temporarily rate-limiting this server. Try again in a few minutes.",
+    action: null,
+    statusText: "GitHub rate limit — try again",
+    statusColor: "bg-yellow-500",
+  },
+  no_summary: {
+    title: "Summary Not Ready",
+    hint: "Generate the summary first, then try asking questions.",
+    action: null,
+    statusText: "No summary yet",
+    statusColor: "bg-amber-500",
+  },
+  server_error: {
+    title: "Server Error",
+    hint: "An unexpected error occurred on the server. Please try again.",
+    action: null,
+    statusText: "Server error",
+    statusColor: "bg-red-500",
+  },
+};
+
 /**
  * Render a structured error block in the reader pane.
  * `errorCode` comes from the worker's JSON response; it is a stable
  * machine-readable token that drives title / hint / action.
  */
 function renderSummaryError(errorCode, rawMessage) {
-  const ERROR_MAP = {
-    no_api_key: {
-      title: "API Key Required",
-      hint: "Add your OpenAI, Groq, or Gemini API key in Settings to generate summaries.",
-      action: "settings",
-      statusText: "Add API key in settings",
-      statusColor: "bg-amber-500",
-    },
-    invalid_api_key: {
-      title: "Invalid API Key",
-      hint: "The key you provided was rejected by the AI provider. Please check it in Settings.",
-      action: "settings",
-      statusText: "Invalid API key — check settings",
-      statusColor: "bg-amber-500",
-    },
-    rate_limit: {
-      title: "Rate Limit Reached",
-      hint: "Your API key has hit its request-rate limit. Wait a moment, then try again.",
-      action: null,
-      statusText: "Rate limit — try again shortly",
-      statusColor: "bg-yellow-500",
-    },
-    quota_exceeded: {
-      title: "API Quota Exceeded",
-      hint: "Your API key has run out of credits or reached its monthly quota. Check your billing in the provider dashboard.",
-      action: null,
-      statusText: "Quota exceeded",
-      statusColor: "bg-red-500",
-    },
-    forbidden: {
-      title: "API Access Denied",
-      hint: "The API key does not have permission for this operation, or the provider has blocked the request.",
-      action: null,
-      statusText: "Access denied",
-      statusColor: "bg-red-500",
-    },
-    not_found: {
-      title: "Repository Not Found",
-      hint: "GitHub could not find this repository.",
-      action: null,
-      statusText: "Repository not found",
-      statusColor: "bg-red-500",
-    },
-    github_rate_limit: {
-      title: "GitHub Rate Limit",
-      hint: "GitHub's API is temporarily rate-limiting this server. Try again in a few minutes.",
-      action: null,
-      statusText: "GitHub rate limit — try again",
-      statusColor: "bg-yellow-500",
-    },
-    server_error: {
-      title: "Server Error",
-      hint: "An unexpected error occurred on the server. Please try again.",
-      action: null,
-      statusText: "Server error",
-      statusColor: "bg-red-500",
-    },
-  };
-
   const def = ERROR_MAP[errorCode] ?? {
     title: "Summary Failed",
     hint: rawMessage || "An unknown error occurred.",
@@ -1522,6 +1558,161 @@ function renderSummaryError(errorCode, rawMessage) {
   if (def.action === "settings") {
     openSettingsBtn.click();
   }
+}
+
+function renderChatSection(repo) {
+  document.getElementById("readerChat")?.remove();
+
+  const el = document.createElement("div");
+  el.id = "readerChat";
+  el.className = "mt-10 border-t border-borderSubtle pt-8";
+  el.innerHTML = `
+    <p class="text-xs font-mono text-textMuted uppercase tracking-wider mb-4">Ask about this repo</p>
+    <div id="chatMessages" class="space-y-4 mb-6"></div>
+    <div id="chatChips" class="flex flex-wrap gap-2 pb-8">
+      ${CHAT_QUESTIONS.map(
+        (q) => `
+        <button data-qid="${q.id}"
+          class="chat-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-borderSubtle bg-appBg text-xs text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
+          <span class="chip-label">${escapeHtml(q.label)}</span>
+        </button>`,
+      ).join("")}
+    </div>`;
+
+  // Append to readerPostSlot so it's always a stable sibling of readerBody
+  // and not affected by readerBody.innerHTML resets or source panel toggles
+  readerPostSlot.appendChild(el);
+
+  el.querySelectorAll(".chat-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const label = btn.querySelector(".chip-label").textContent.trim();
+      handleQuestionClick(btn.dataset.qid, label, repo);
+    });
+  });
+}
+
+async function handleQuestionClick(questionId, label, repo) {
+  const cacheKey = `${repo.id}_${questionId}_${currentLang}`;
+
+  const chip = document.querySelector(`[data-qid="${questionId}"]`);
+  if (chip) {
+    chip.disabled = true;
+    chip.querySelector(".chip-label").textContent =
+      "⏳ " + label.replace(/^[^\s]+\s/, "");
+  }
+
+  const messages = document.getElementById("chatMessages");
+
+  // User bubble
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-end">
+      <div class="bg-hn/10 border border-hn/20 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] text-sm text-textMain">${escapeHtml(label)}</div>
+    </div>`,
+  );
+
+  // Loading bubble
+  const loadId = `chat-load-${Date.now()}`;
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div id="${loadId}" class="flex justify-start">
+      <div class="bg-surface border border-borderSubtle rounded-2xl rounded-tl-sm px-4 py-3 text-textMuted text-sm flex items-center gap-2">
+        ${SPINNER_SVG}<span>Thinking…</span>
+      </div>
+    </div>`,
+  );
+  messages.lastElementChild.scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+  });
+
+  // Check client cache first
+  if (answerCache.has(cacheKey)) {
+    document.getElementById(loadId)?.remove();
+    appendAnswer(messages, answerCache.get(cacheKey), true);
+    markChipAnswered(chip, label);
+    return;
+  }
+
+  try {
+    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+    // Always send the locally-rendered summary as fallback context.
+    // The worker's in-memory cache may have been cleared (Worker restarts are stateless).
+    const localSummary =
+      localStorage.getItem(`summary_${repo.id}_${currentLang}`) ||
+      localStorage.getItem(`summary_${repo.id}_en`) ||
+      "";
+
+    const res = await fetch(`/api/ask`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        repoId: repo.id,
+        questionId,
+        lang: currentLang,
+        summary: localSummary,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    document.getElementById(loadId)?.remove();
+
+    if (!res.ok) {
+      const def = ERROR_MAP[data.errorCode] ?? {
+        title: "Failed",
+        hint: data.error || "Unknown error.",
+      };
+      appendAnswer(messages, `**${def.title}** — ${def.hint}`, false, true);
+      // Re-enable chip so user can retry
+      if (chip) {
+        chip.disabled = false;
+        chip.querySelector(".chip-label").textContent = label;
+      }
+      if (
+        data.errorCode === "no_api_key" ||
+        data.errorCode === "invalid_api_key"
+      )
+        openSettingsBtn.click();
+      return;
+    }
+
+    answerCache.set(cacheKey, data.answer);
+    appendAnswer(messages, data.answer, data.isCached);
+    markChipAnswered(chip, label);
+  } catch (err) {
+    document.getElementById(loadId)?.remove();
+    appendAnswer(messages, `**Error** — ${err.message}`, false, true);
+    if (chip) {
+      chip.disabled = false;
+      chip.querySelector(".chip-label").textContent = label;
+    }
+  }
+}
+
+function markChipAnswered(chip, originalLabel) {
+  if (!chip) return;
+  const withoutEmoji = originalLabel.replace(/^[^\s]+\s/, "");
+  chip.querySelector(".chip-label").textContent = "✅ " + withoutEmoji;
+  chip.classList.add("is-answered");
+  chip.disabled = true;
+}
+
+function appendAnswer(container, markdown, isCached = false, isError = false) {
+  const div = document.createElement("div");
+  div.className = "flex justify-start";
+  div.innerHTML = `
+    <div class="bg-surface border ${isError ? "border-red-500/20" : "border-borderSubtle"} rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%] text-sm">
+      <div class="prose prose-invert prose-sm">${markdownToSafeHtml(markdown)}</div>
+      ${isCached ? `<p class="text-[10px] font-mono text-textMuted/50 mt-2 text-right">cached</p>` : ""}
+    </div>`;
+  container.appendChild(div);
+  // Scroll chips into view so they remain accessible at the bottom
+  const chips = document.getElementById("chatChips");
+  (chips ?? div).scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ─── WordCloud ───────────────────────────────────────────────────────────────────
@@ -1559,9 +1750,11 @@ async function loadWordCloud() {
     if (!res.ok || data.error) {
       const errorCode =
         data.errorCode ||
-        (res.status === 401 ? "no_api_key" :
-         res.status === 429 ? "rate_limit" :
-         "server_error");
+        (res.status === 401
+          ? "no_api_key"
+          : res.status === 429
+            ? "rate_limit"
+            : "server_error");
       renderWordCloudError(errorCode, data.error);
       return;
     }
@@ -1582,15 +1775,39 @@ async function loadWordCloud() {
 
 function renderWordCloudError(errorCode, rawMessage) {
   const WORDCLOUD_ERROR_MAP = {
-    no_api_key:        { title: "API Key Required",      hint: "Add your API key in Settings for AI-powered analysis." },
-    invalid_api_key:   { title: "Invalid API Key",       hint: "The key was rejected by the provider — check Settings." },
-    rate_limit:        { title: "Rate Limit Reached",    hint: "Too many requests — wait a moment and try again." },
-    quota_exceeded:    { title: "Quota Exceeded",        hint: "API credits exhausted — check your provider billing." },
-    forbidden:         { title: "Access Denied",         hint: "The API key lacks permission for this request." },
-    github_rate_limit: { title: "GitHub Rate Limit",     hint: "GitHub is temporarily rate-limiting this server." },
-    server_error:      { title: "Server Error",          hint: rawMessage || "An unexpected error occurred." },
+    no_api_key: {
+      title: "API Key Required",
+      hint: "Add your API key in Settings for AI-powered analysis.",
+    },
+    invalid_api_key: {
+      title: "Invalid API Key",
+      hint: "The key was rejected by the provider — check Settings.",
+    },
+    rate_limit: {
+      title: "Rate Limit Reached",
+      hint: "Too many requests — wait a moment and try again.",
+    },
+    quota_exceeded: {
+      title: "Quota Exceeded",
+      hint: "API credits exhausted — check your provider billing.",
+    },
+    forbidden: {
+      title: "Access Denied",
+      hint: "The API key lacks permission for this request.",
+    },
+    github_rate_limit: {
+      title: "GitHub Rate Limit",
+      hint: "GitHub is temporarily rate-limiting this server.",
+    },
+    server_error: {
+      title: "Server Error",
+      hint: rawMessage || "An unexpected error occurred.",
+    },
   };
-  const def = WORDCLOUD_ERROR_MAP[errorCode] ?? { title: "Failed", hint: rawMessage || "Unknown error." };
+  const def = WORDCLOUD_ERROR_MAP[errorCode] ?? {
+    title: "Failed",
+    hint: rawMessage || "Unknown error.",
+  };
 
   wordcloudStatus.textContent = def.title;
   wordcloudLoading.classList.add("hidden");
@@ -1601,10 +1818,18 @@ function renderWordCloudError(errorCode, rawMessage) {
   ctx.fillStyle = "#a1a1aa";
   ctx.font = "14px Geist Sans, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(def.title, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 - 20);
+  ctx.fillText(
+    def.title,
+    wordcloudCanvas.width / 2,
+    wordcloudCanvas.height / 2 - 20,
+  );
   ctx.font = "12px Geist Sans, sans-serif";
   ctx.fillStyle = "#71717a";
-  ctx.fillText(def.hint, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 + 10);
+  ctx.fillText(
+    def.hint,
+    wordcloudCanvas.width / 2,
+    wordcloudCanvas.height / 2 + 10,
+  );
 }
 
 function renderWordCloud(words) {

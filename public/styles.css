@@ -38,7 +38,7 @@ body {
   color: #a1a1aa;
   font-family: "Geist Sans", sans-serif;
   line-height: 1.75;
-  font-size: 1.05rem;
+  font-size: 0.9375rem;
 }
 .prose strong {
   color: #e4e4e7;
@@ -238,4 +238,24 @@ dialog::backdrop {
 }
 .reader-source-iframe-wrap.hidden {
   display: none;
+}
+
+/* ── Chat chips ──────────────────────────────────────────────────────────── */
+.chat-chip {
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+.chat-chip:not(:disabled):hover {
+  border-color: rgba(255, 102, 0, 0.5);
+  color: #e4e4e7;
+}
+.chat-chip:disabled {
+  cursor: not-allowed;
+}
+.chat-chip.is-answered {
+  border-color: rgba(34, 197, 94, 0.3);
+  color: rgba(74, 222, 128, 0.7);
+  opacity: 1;
 }

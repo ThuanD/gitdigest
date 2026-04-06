@@ -9,6 +9,47 @@ const listIdCaches = new Map(); // key: "period-language" — was plain object, 
 const summaryCache = new Map();
 const repoCache = new Map();
 const wordcloudCache = new Map();
+const askCache = new Map(); // key: "ask_repoId_questionId_lang"
+const ASK_CACHE_MAX = 1000;
+
+/**
+ * Predefined questions the client is allowed to ask.
+ * The key is a stable ID sent from the client; the value is the full question
+ * sent to the AI. Keeping the list server-side prevents prompt injection.
+ */
+const ASK_QUESTIONS = {
+  // 1. Why trending?
+  trending_analysis:
+    "Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives.",
+
+  // 2. What do forkers actually do?
+  fork_utility:
+    "What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?",
+
+  // 3. Production-readiness (honest take)
+  practicality:
+    "Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today.",
+
+  // 4. Tech stack & architecture deep dive
+  tech_stack:
+    "What are the core technologies and key architectural decisions in this project? How are the main components decoupled or integrated? Highlight anything unconventional or particularly elegant.",
+
+  // 5. Fastest path to a running demo
+  quick_start:
+    "What is the fastest way to get a working demo running locally? Are there any hidden prerequisites, non-obvious setup steps, or common stumbling blocks a developer should know before starting?",
+
+  // 6. Code quality & patterns worth studying
+  best_practices:
+    "What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?",
+
+  // 7. Honest limitations
+  limitations:
+    "What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it.",
+
+  // 8. Issue health & security posture
+  issue_health:
+    "Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?",
+};
 
 // ─── Custom exceptions ──────────────────────────────────────────────
 class RateLimitError extends Error {}
@@ -46,7 +87,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Authorization, Content-Type, X-OpenAI-Key",
-    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
   };
 }
 
@@ -82,6 +123,14 @@ function repoCacheSet(key, value) {
     repoCache.delete(first);
   }
   repoCache.set(key, value);
+}
+
+function askCacheSet(key, value) {
+  if (askCache.size >= ASK_CACHE_MAX && !askCache.has(key)) {
+    const first = askCache.keys().next().value;
+    askCache.delete(first);
+  }
+  askCache.set(key, value);
 }
 
 function wordcloudCacheSet(key, value) {
@@ -314,8 +363,11 @@ async function fetchGitHubRepo(repoId, env) {
 
     return { repo, isCached: false };
   } catch (error) {
+    // Re-throw typed errors so callers (handleRepoDetails, generateSummary) can map them
+    // to proper HTTP responses. Only log unexpected errors.
+    if (error instanceof NotFoundError || error instanceof RateLimitError) throw error;
     console.error("Failed to load GitHub repo:", error);
-    return [];
+    throw error;
   }
 }
 
@@ -360,8 +412,9 @@ async function fetchGitHubIssues(repoId, env) {
     }
     return issueData;
   } catch (error) {
+    if (error instanceof NotFoundError || error instanceof RateLimitError) throw error;
     console.error("Failed to load GitHub issues:", error);
-    return [];
+    throw error;
   }
 }
 
@@ -773,15 +826,17 @@ async function handleRepoDetails(request, url, env) {
     // Fetch and render README using the new function
     const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
 
+    // `repo` is already mapped by fetchGitHubRepo — do NOT call mapGitHubRepo again
     const result = {
-      ...mapGitHubRepo(repo),
-      readmeContent: readmeContent,
-      readmeHtml: readmeHtml,
+      ...repo,
+      readmeContent,
+      readmeHtml,
       rawApiResponse: repo,
       isCached,
     };
 
-    repoCacheSet(repoId, { t: Date.now(), result });
+    // Use `time` (not `t`) to stay consistent with fetchGitHubRepo cache reads
+    repoCacheSet(repoId, { repo, time: Date.now() });
     return json(result);
   } catch (error) {
     if (error instanceof NotFoundError)
@@ -978,6 +1033,105 @@ async function generateSummary(repoId, lang, apiKey, env) {
   return summary;
 }
 
+async function handleAsk(request, url, env) {
+  try {
+    // Accept both POST (preferred) and GET (legacy)
+    let repoId, questionId, lang, clientSummary;
+    if (request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      repoId        = body.repoId;
+      questionId    = body.questionId;
+      lang          = (body.lang || "en").slice(0, 12);
+      clientSummary = typeof body.summary === "string" ? body.summary.slice(0, 24000) : "";
+    } else {
+      repoId        = url.searchParams.get("repoId");
+      questionId    = url.searchParams.get("questionId");
+      lang          = (url.searchParams.get("lang") || "en").slice(0, 12);
+      clientSummary = "";
+    }
+
+    if (!repoId) {
+      return json({ error: "Missing repoId", errorCode: "bad_request" }, 400);
+    }
+    if (!questionId || !ASK_QUESTIONS[questionId]) {
+      return json({ error: "Invalid or unknown questionId", errorCode: "bad_request" }, 400);
+    }
+
+    // Check answer cache first
+    const cacheKey = `ask_${repoId}_${questionId}_${lang}`;
+    if (askCache.has(cacheKey)) {
+      cacheStats.askCacheHits++;
+      return json({ answer: askCache.get(cacheKey), isCached: true });
+    }
+    cacheStats.askCacheMisses++;
+
+    // Resolve API key: client key takes priority
+    const clientKey = openAiKeyFromRequest(request);
+    const apiKey = clientKey || (env.OPENAI_API_KEY || "").trim();
+    if (!apiKey) {
+      return json({ error: "No API key configured. Add your API key in settings.", errorCode: "no_api_key" }, 401);
+    }
+
+    // Resolve summary: server in-memory cache → client-supplied fallback
+    // (Worker is stateless; in-memory cache resets on every cold start)
+    const summaryKey = summaryCache.has(`${repoId}_${lang}`)
+      ? `${repoId}_${lang}`
+      : summaryCache.has(`${repoId}_en`)
+        ? `${repoId}_en`
+        : null;
+    const summary = (summaryKey ? summaryCache.get(summaryKey) : null) || clientSummary;
+
+    if (!summary) {
+      return json({
+        error: "No summary found for this repository. Generate the summary first.",
+        errorCode: "no_summary",
+      }, 400);
+    }
+
+    // Build context — for issue_health we enrich with live issues data
+    let extraContext = "";
+    if (questionId === "issue_health") {
+      try {
+        const issuesData = await fetchGitHubIssues(repoId, env);
+        const issues = Array.isArray(issuesData) ? issuesData : (issuesData.issues || []);
+        if (issues.length > 0) {
+          const issueLines = issues.slice(0, 20).map(i => {
+            const labels = (i.labels || []).map(l => l.name || l).join(", ");
+            return `- #${i.number} [${labels || "no labels"}] ${i.title} (${i.comments} comments, opened ${i.created_at?.slice(0, 10)})`;
+          }).join("\n");
+          extraContext = `\n\nOpen Issues (top ${Math.min(issues.length, 20)} of ${issues.length}):\n${issueLines}`;
+        } else {
+          extraContext = "\n\nOpen Issues: none found (repo may have issues disabled or zero open issues).";
+        }
+      } catch {
+        // Issues fetch failed — continue without it, AI will note limited data
+        extraContext = "\n\nOpen Issues: could not be fetched at this time.";
+      }
+    }
+
+    const questionText = ASK_QUESTIONS[questionId];
+
+    const systemPrompt = `You are a sharp, opinionated technical analyst reviewing GitHub repositories for senior developers.
+Answer in the language matching ISO code: '${lang}'.
+Be specific, concrete, and data-driven — cite signals from the summary or issues when possible.
+Avoid generic advice. Use markdown formatting (bold key terms, use short bullet lists only when listing distinct items).
+Target length: 180–320 words. Never pad the response.`;
+
+    const userPrompt = `Repository summary:\n${summary}${extraContext}\n\nQuestion: ${questionText}`;
+
+    const answer = await callOpenAI(systemPrompt, userPrompt, apiKey);
+    askCacheSet(cacheKey, answer);
+    return json({ answer, isCached: false });
+
+  } catch (error) {
+    if (error instanceof AIApiError) {
+      return json({ error: error.message, errorCode: error.errorCode }, error.httpStatus);
+    }
+    console.error("Ask error:", error);
+    return json({ error: error.message || "Internal server error", errorCode: "server_error" }, 500);
+  }
+}
+
 async function handleWordCloud(request, url, env) {
   try {
     const period = url.searchParams.get("period") || "daily";
@@ -994,7 +1148,7 @@ async function handleWordCloud(request, url, env) {
     cacheStats.wordcloudCacheMisses++;
 
     // Smart strategy: Check if opposite language exists
-    const oppositeLang = language === "vi" ? "en" : "en";
+    const oppositeLang = language === "vi" ? "en" : "vi";
     const oppositeCacheKey = `${period}-${oppositeLang}`;
     
     if (wordcloudCache.has(oppositeCacheKey)) {
@@ -1243,6 +1397,8 @@ const cacheStats = {
   repoCacheMisses: 0,
   wordcloudCacheHits: 0,
   wordcloudCacheMisses: 0,
+  askCacheHits: 0,
+  askCacheMisses: 0,
 };
 
 function getCacheStats() {
@@ -1362,6 +1518,10 @@ export default {
 
       if (url.pathname === "/api/summarize") {
         return await handleSummarize(request, url, env);
+      }
+
+      if (url.pathname === "/api/ask") {
+        return await handleAsk(request, url, env);
       }
 
       if (url.pathname === "/api/wordcloud") {
