@@ -27,7 +27,10 @@ A small web app that lists trending GitHub repositories and generates AI summari
 
    ```bash
    OPENAI_API_KEY=sk-...  # or gsk_... for Groq, or AIza... for Gemini
+   GITHUB_TOKEN=ghp_...      # GitHub Personal Access Token
    ```
+
+   **Note**: `GITHUB_TOKEN` is **required** for production to avoid rate limits (60 requests/hour unauthenticated vs 5,000 requests/hour authenticated).
 
 4. Run locally (Worker + static assets):
 
@@ -37,14 +40,22 @@ A small web app that lists trending GitHub repositories and generates AI summari
 
    Wrangler prints the local URL (often `http://localhost:8787`).
 
-5. (Optional) Set a default API key on the deployed Worker so visitors can summarize without pasting a key:
+5. Set up GitHub API token (required for production):
+
+   ```bash
+   npx wrangler secret put GITHUB_TOKEN
+   # Create a Personal Access Token at: https://github.com/settings/tokens
+   # Scopes needed: public_repo (read-only access to public repositories)
+   ```
+
+6. (Optional) Set a default API key on the deployed Worker so visitors can summarize without pasting a key:
 
    ```bash
    npx wrangler secret put OPENAI_API_KEY
    # Use OpenAI (sk-...), Groq (gsk_...), or Gemini (AIza...) key
    ```
 
-6. Deploy:
+7. Deploy:
 
    ```bash
    npm run deploy
