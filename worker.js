@@ -788,6 +788,7 @@ async function handleSummarize(request, url, env) {
 
     const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
 
+    // Check cache first
     const cacheKey = `${repoId}_${lang}`;
     if (summaryCache.has(cacheKey)) {
       cacheStats.summaryCacheHits++;
@@ -796,55 +797,127 @@ async function handleSummarize(request, url, env) {
 
     cacheStats.summaryCacheMisses++;
 
-    const apiKey =
-      openAiKeyFromRequest(request) || (env.OPENAI_API_KEY || "").trim();
-    if (!apiKey) {
-      return json({ error: "Missing API key." }, 401);
+    // Smart strategy: Check if opposite language exists
+    const oppositeLang = lang === "en" ? "vi" : "en";
+    const oppositeCacheKey = `${repoId}_${oppositeLang}`;
+    
+    if (summaryCache.has(oppositeCacheKey)) {
+      // Translate existing summary instead of regenerating
+      const existingSummary = summaryCache.get(oppositeCacheKey);
+      const translatedSummary = await translateSummary(existingSummary, lang, env);
+      
+      if (translatedSummary) {
+        summaryCache.set(cacheKey, translatedSummary);
+        return json({ summary: translatedSummary, isTranslated: true, fromLang: oppositeLang });
+      }
     }
 
-    const { repo, _ } = await fetchGitHubRepo(repoId, env);
+    // Generate new summary if no translation available
+    const summary = await generateSummary(repoId, lang, env);
+    summaryCache.set(cacheKey, summary);
+    return json({ summary, isGenerated: true });
 
-    // Fetch and render README using the new function (with AI processing)
-    const { readmeContent, _readmeHtml } = await fetchAndRenderReadme(
-      repo,
-      env,
-      true,
-    );
-
-    let contentToSummarize = `Repository: ${repo.fullName}\n`;
-    contentToSummarize += `Description: ${repo.description || "No description"}\n`;
-    contentToSummarize += `URL: ${repo.htmlUrl}\n`;
-    contentToSummarize += `Language: ${repo.language || "Unknown"}\n`;
-    contentToSummarize += `Stars: ${repo.stars}\n`;
-    contentToSummarize += `Forks: ${repo.forks}\n`;
-    contentToSummarize += `Topics: ${(repo.topics || []).join(", ")}\n`;
-    if (readmeContent) contentToSummarize += `\nREADME:\n${readmeContent}`;
-
-    const { systemPrompt, userPrompt } = buildSummarizePrompt(
-      contentToSummarize,
-      lang,
-      repo,
-    );
-
-    const summary = await callOpenAI(systemPrompt, userPrompt, apiKey);
-
-    summaryCacheSet(cacheKey, summary);
-    return json({ summary, cached: false });
   } catch (error) {
-    if (error instanceof NotFoundError)
-      return json({ error: error.message }, 404);
-    if (error instanceof RateLimitError)
-      return json({ error: error.message }, 429);
-    if (error instanceof AICallError)
-      return json({ error: error.message }, 400);
-    if (error instanceof AIResponseError)
-      return json({ error: error.message }, 400);
-    if (error instanceof AINoContentError)
-      return json({ error: error.message }, 400);
-
     console.error("Summarize error:", error);
-    return json({ error: "Failed to generate summary" }, 500);
+    return json({ error: error.message }, 500);
   }
+}
+
+// ─── Translation Module ───────────────────────────────────────────────────────
+async function translateSummary(text, targetLang, env) {
+  try {
+    const apiKey = env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+
+    const prompt = targetLang === "vi" 
+      ? `Translate the following English text to Vietnamese. Keep the meaning and tone:\n\n${text}`
+      : `Translate the following Vietnamese text to English. Keep the meaning and tone:\n\n${text}`;
+
+    const response = await callOpenAI(
+      "You are a professional translator. Translate accurately while preserving the original meaning and tone.",
+      prompt,
+      apiKey
+    );
+
+    return response;
+  } catch (error) {
+    console.error("Translation error:", error);
+    return null;
+  }
+}
+
+async function translateWordCloud(wordcloudData, targetLang, env) {
+  try {
+    const apiKey = env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+
+    // Extract words to translate
+    const words = wordcloudData.words || [];
+    const wordTexts = words.map(w => w.text).join(", ");
+
+    const prompt = targetLang === "vi" 
+      ? `Translate the following English keywords to Vietnamese. Return as JSON array: ["translated1", "translated2", ...]\n\nKeywords: ${wordTexts}`
+      : `Translate the following Vietnamese keywords to English. Return as JSON array: ["translated1", "translated2", ...]\n\nKeywords: ${wordTexts}`;
+
+    const response = await callOpenAI(
+      "You are a professional translator. Translate keywords accurately. Return only JSON array.",
+      prompt,
+      apiKey
+    );
+
+    let translatedWords;
+    try {
+      translatedWords = JSON.parse(response);
+    } catch {
+      // Fallback: simple split if JSON parsing fails
+      translatedWords = response.split(",").map(w => w.trim().replace(/['"]/g, ''));
+    }
+
+    // Map translations back to original structure
+    const translatedWordcloud = {
+      ...wordcloudData,
+      words: words.map((word, index) => ({
+        ...word,
+        text: translatedWords[index] || word.text
+      }))
+    };
+
+    return translatedWordcloud;
+  } catch (error) {
+    console.error("WordCloud translation error:", error);
+    return null;
+  }
+}
+
+// ─── Summary Generation Module ───────────────────────────────────────────────────
+async function generateSummary(repoId, lang, env) {
+  const apiKey = env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing API key.");
+  }
+
+  const { repo, _ } = await fetchGitHubRepo(repoId, env);
+
+  // Fetch and render README
+  const { readmeContent, _readmeHtml } = await fetchAndRenderReadme(repo, env, true);
+
+  let contentToSummarize = `Repository: ${repo.fullName}\n`;
+  contentToSummarize += `Description: ${repo.description || "No description"}\n`;
+  contentToSummarize += `URL: ${repo.htmlUrl}\n`;
+  contentToSummarize += `Language: ${repo.language || "Unknown"}\n`;
+  contentToSummarize += `Stars: ${repo.stars}\n`;
+  contentToSummarize += `Forks: ${repo.forks}\n`;
+  contentToSummarize += `Topics: ${(repo.topics || []).join(", ")}\n`;
+  if (readmeContent) contentToSummarize += `\nREADME:\n${readmeContent}`;
+
+  const { systemPrompt, userPrompt } = buildSummarizePrompt(
+    contentToSummarize,
+    lang,
+    repo,
+  );
+
+  const summary = await callOpenAI(systemPrompt, userPrompt, apiKey);
+  return summary;
 }
 
 async function handleWordCloud(request, url, env) {
@@ -862,7 +935,23 @@ async function handleWordCloud(request, url, env) {
 
     cacheStats.wordcloudCacheMisses++;
 
-    const repos = await fetchTrendingRepos(period, language, env);
+    // Smart strategy: Check if opposite language exists
+    const oppositeLang = language === "vi" ? "en" : "en";
+    const oppositeCacheKey = `${period}-${oppositeLang}`;
+    
+    if (wordcloudCache.has(oppositeCacheKey)) {
+      // Translate existing wordcloud instead of regenerating
+      const existingWordcloud = wordcloudCache.get(oppositeCacheKey);
+      const translatedWordcloud = await translateWordCloud(existingWordcloud.data, language, env);
+      
+      if (translatedWordcloud) {
+        wordcloudCache.set(cacheKey, { time: Date.now(), data: translatedWordcloud });
+        return json({ ...translatedWordcloud, isTranslated: true, fromLang: oppositeLang });
+      }
+    }
+
+    // Generate new wordcloud if no translation available
+    const repos = await fetchTrendingRepos(period, "", env); // Get all repos for analysis
 
     // AI Analysis for wordcloud
     const apiKey =
@@ -870,8 +959,8 @@ async function handleWordCloud(request, url, env) {
     if (!apiKey) {
       // Fallback: Simple keyword extraction without AI
       const wordData = extractBasicKeywords(repos);
-      wordcloudCacheSet(cacheKey, wordData);
-      return json(wordData);
+      wordcloudCache.set(cacheKey, { time: Date.now(), data: wordData });
+      return json({ ...wordData, isGenerated: true });
     }
 
     // Prepare data for AI analysis
@@ -915,9 +1004,9 @@ async function handleWordCloud(request, url, env) {
     }
 
     // Cache the result
-    wordcloudCacheSet(cacheKey, wordData);
+    wordcloudCache.set(cacheKey, { time: Date.now(), data: wordData });
 
-    return json({ ...wordData, cached: false });
+    return json({ ...wordData, isGenerated: true });
   } catch (error) {
     if (error instanceof NotFoundError)
       return json({ error: error.message }, 404);
