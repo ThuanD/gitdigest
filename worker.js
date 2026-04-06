@@ -10,12 +10,31 @@ const summaryCache = new Map();
 const repoCache = new Map();
 const wordcloudCache = new Map();
 
-// ─── Custom exception ──────────────────────────────────────────────
+// ─── Custom exceptions ──────────────────────────────────────────────
 class RateLimitError extends Error {}
 class NotFoundError extends Error {}
-class AICallError extends Error {}
-class AIResponseError extends Error {}
-class AINoContentError extends Error {}
+
+/**
+ * Thrown when the upstream AI provider returns an error.
+ * `errorCode` is a stable machine-readable token forwarded to the client.
+ * `httpStatus` is the HTTP status the worker should use in its own response.
+ *
+ * errorCode values:
+ *   no_api_key        – no key was supplied at all
+ *   invalid_api_key   – provider returned 401
+ *   rate_limit        – provider returned 429 (request rate)
+ *   quota_exceeded    – provider returned 429 with quota/billing message
+ *   forbidden         – provider returned 403
+ *   ai_error          – any other non-OK response from the AI provider
+ */
+class AIApiError extends Error {
+  constructor(message, { errorCode = "ai_error", httpStatus = 502 } = {}) {
+    super(message);
+    this.name = "AIApiError";
+    this.errorCode = errorCode;
+    this.httpStatus = httpStatus;
+  }
+}
 
 // ─── Utility Functions Module ────────────────────────────────────────────────────
 /**
@@ -666,22 +685,38 @@ async function callOpenAI(systemPrompt, userPrompt, apiKey) {
   const aiData = await response.json();
 
   if (!response.ok) {
-    console.error("AI API request failed:", aiData);
-    
-    // Forward specific error details to FE
-    let errorMessage = `AI API request failed: ${response.status}`;
-    if (aiData.error?.message) {
-      errorMessage = aiData.error.message;
-    } else if (aiData.error) {
-      errorMessage = `AI API error: ${JSON.stringify(aiData.error)}`;
+    const status = response.status;
+    const errMsg =
+      aiData.error?.message ||
+      (aiData.error ? JSON.stringify(aiData.error) : `AI API error ${status}`);
+
+    let errorCode = "ai_error";
+    let httpStatus = 502; // Bad Gateway — upstream AI provider failed
+
+    if (status === 401) {
+      errorCode = "invalid_api_key";
+      httpStatus = 401;
+    } else if (status === 429) {
+      const isQuota =
+        aiData.error?.code === "insufficient_quota" ||
+        errMsg.toLowerCase().includes("quota") ||
+        errMsg.toLowerCase().includes("billing") ||
+        errMsg.toLowerCase().includes("exceeded your current quota");
+      errorCode = isQuota ? "quota_exceeded" : "rate_limit";
+      httpStatus = 429;
+    } else if (status === 403) {
+      errorCode = "forbidden";
+      httpStatus = 403;
     }
-    
-    throw new Error(errorMessage);
+
+    console.error(`AI API error [${status}/${errorCode}]:`, errMsg);
+    throw new AIApiError(errMsg, { errorCode, httpStatus });
   }
 
   if (aiData.error) {
-    console.error("AI API returned error:", aiData.error);
-    throw new Error(aiData.error.message || JSON.stringify(aiData.error));
+    const errMsg = aiData.error.message || JSON.stringify(aiData.error);
+    console.error("AI API returned error body:", errMsg);
+    throw new AIApiError(errMsg, { errorCode: "ai_error", httpStatus: 502 });
   }
 
   const data = apiKey.startsWith("AIza")
@@ -783,10 +818,24 @@ async function handleSummarize(request, url, env) {
   try {
     const repoId = url.searchParams.get("repoId");
     if (!repoId) {
-      return json({ error: "Missing repository ID" }, 400);
+      return json({ error: "Missing repository ID", errorCode: "bad_request" }, 400);
     }
 
     const lang = (url.searchParams.get("lang") || "en").slice(0, 12);
+
+    // Client key takes priority; fall back to server-configured key.
+    const clientKey = openAiKeyFromRequest(request);
+    const apiKey = clientKey || (env.OPENAI_API_KEY || "").trim();
+
+    if (!apiKey) {
+      return json(
+        {
+          error: "No API key configured. Add your API key in settings.",
+          errorCode: "no_api_key",
+        },
+        401,
+      );
+    }
 
     // Check cache first
     const cacheKey = `${repoId}_${lang}`;
@@ -797,29 +846,41 @@ async function handleSummarize(request, url, env) {
 
     cacheStats.summaryCacheMisses++;
 
-    // Smart strategy: Check if opposite language exists
+    // Smart strategy: translate an existing opposite-language summary if available
     const oppositeLang = lang === "en" ? "vi" : "en";
     const oppositeCacheKey = `${repoId}_${oppositeLang}`;
-    
+
     if (summaryCache.has(oppositeCacheKey)) {
-      // Translate existing summary instead of regenerating
       const existingSummary = summaryCache.get(oppositeCacheKey);
       const translatedSummary = await translateSummary(existingSummary, lang, env);
-      
+
       if (translatedSummary) {
-        summaryCache.set(cacheKey, translatedSummary);
+        summaryCacheSet(cacheKey, translatedSummary);
         return json({ summary: translatedSummary, isTranslated: true, fromLang: oppositeLang });
       }
     }
 
-    // Generate new summary if no translation available
-    const summary = await generateSummary(repoId, lang, env);
-    summaryCache.set(cacheKey, summary);
+    // Generate new summary
+    const summary = await generateSummary(repoId, lang, apiKey, env);
+    summaryCacheSet(cacheKey, summary);
     return json({ summary, isGenerated: true });
 
   } catch (error) {
+    // AI provider errors: forward the provider's status and a machine-readable code
+    if (error instanceof AIApiError) {
+      return json({ error: error.message, errorCode: error.errorCode }, error.httpStatus);
+    }
+    if (error instanceof NotFoundError) {
+      return json({ error: error.message, errorCode: "not_found" }, 404);
+    }
+    if (error instanceof RateLimitError) {
+      return json({ error: error.message, errorCode: "github_rate_limit" }, 429);
+    }
     console.error("Summarize error:", error);
-    return json({ error: error.message }, 500);
+    return json(
+      { error: error.message || "Internal server error", errorCode: "server_error" },
+      500,
+    );
   }
 }
 
@@ -890,11 +951,8 @@ async function translateWordCloud(wordcloudData, targetLang, env) {
 }
 
 // ─── Summary Generation Module ───────────────────────────────────────────────────
-async function generateSummary(repoId, lang, env) {
-  const apiKey = env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing API key.");
-  }
+// apiKey is required — callers must resolve (client key || env key) before calling.
+async function generateSummary(repoId, lang, apiKey, env) {
 
   const { repo, _ } = await fetchGitHubRepo(repoId, env);
 
@@ -1008,19 +1066,17 @@ async function handleWordCloud(request, url, env) {
 
     return json({ ...wordData, isGenerated: true });
   } catch (error) {
-    if (error instanceof NotFoundError)
-      return json({ error: error.message }, 404);
-    if (error instanceof RateLimitError)
-      return json({ error: error.message }, 429);
-    if (error instanceof AICallError)
-      return json({ error: error.message }, 400);
-    if (error instanceof AIResponseError)
-      return json({ error: error.message }, 400);
-    if (error instanceof AINoContentError)
-      return json({ error: error.message }, 400);
-
+    if (error instanceof AIApiError) {
+      return json({ error: error.message, errorCode: error.errorCode }, error.httpStatus);
+    }
+    if (error instanceof NotFoundError) {
+      return json({ error: error.message, errorCode: "not_found" }, 404);
+    }
+    if (error instanceof RateLimitError) {
+      return json({ error: error.message, errorCode: "github_rate_limit" }, 429);
+    }
     console.error("WordCloud analysis error:", error);
-    return json({ error: "Failed to generate wordcloud analysis" }, 500);
+    return json({ error: "Failed to generate wordcloud analysis", errorCode: "server_error" }, 500);
   }
 }
 

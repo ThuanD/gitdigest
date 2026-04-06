@@ -1393,23 +1393,16 @@ async function loadSummaryForRepo(repo) {
     );
     const data = await res.json().catch(() => ({}));
 
-    if (res.status === 401) {
-      openSettingsBtn.click();
-      readerBody.classList.remove("opacity-50");
-      readerBody.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-12 text-center">
-          <div class="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-9h6m-6 0h-6m2 6V7a2 2 0 012-2h6a2 2 0 012 2v5m-2 8h.01M9 16h.01"></path>
-            </svg>
-          </div>
-          <h3 class="text-lg font-medium text-textMain mb-2">API Key Required</h3>
-          <p class="text-textMuted text-sm max-w-md">Please add your OpenAI, Groq, or Gemini API key in settings to generate repository summaries.</p>
-        </div>`;
-      readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Add API key in settings</span></span>`;
+    if (!res.ok) {
+      // Worker always includes errorCode; fall back to HTTP status inference.
+      const errorCode =
+        data.errorCode ||
+        (res.status === 401 ? "no_api_key" :
+         res.status === 429 ? "rate_limit" :
+         res.status === 404 ? "not_found" : "server_error");
+      renderSummaryError(errorCode, data.error);
       return;
     }
-    if (!res.ok) throw new Error(data.error || "Summary request failed");
 
     const summary = data.summary;
     if (!summary) throw new Error("Empty summary");
@@ -1435,30 +1428,99 @@ async function loadSummaryForRepo(repo) {
     if (activeCard) applyReadState(repo, activeCard);
   } catch (err) {
     console.error(err);
-    readerBody.classList.remove("opacity-50");
-    readerBody.innerHTML = `
-      <div class="flex flex-col items-center justify-center py-12 text-center">
-        <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
-          <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-        </div>
-        <h3 class="text-lg font-medium text-textMain mb-2">${err.message?.includes("401") ? "Invalid API Key" : err.message?.includes("Forbidden") ? "API Access Denied" : "Summary Failed"}</h3>
-        <p class="text-textMuted text-sm max-w-md">
-          ${err.message?.includes("401") 
-            ? "The API key you provided is invalid or expired. Please check your API key in settings."
-            : err.message?.includes("Forbidden")
-            ? "API access denied. Your API key may not have the correct permissions or the service is temporarily unavailable."
-            : err.message?.includes("403")
-            ? "API rate limit exceeded. Please try again in a few minutes."
-            : err.message?.includes("429")
-            ? "Too many requests. Please wait before trying again."
-            : err.message?.includes("AI API error")
-            ? `AI API error: ${err.message}`
-            : "Failed to generate summary. Please check your API key and try again."}
-        </p>
-      </div>`;
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Summary failed — check API key</span></span>`;
+    renderSummaryError("server_error", err.message);
+  }
+}
+
+// ─── Summary error rendering ──────────────────────────────────────────────────
+/**
+ * Render a structured error block in the reader pane.
+ * `errorCode` comes from the worker's JSON response; it is a stable
+ * machine-readable token that drives title / hint / action.
+ */
+function renderSummaryError(errorCode, rawMessage) {
+  const ERROR_MAP = {
+    no_api_key: {
+      title: "API Key Required",
+      hint: "Add your OpenAI, Groq, or Gemini API key in Settings to generate summaries.",
+      action: "settings",
+      statusText: "Add API key in settings",
+      statusColor: "bg-amber-500",
+    },
+    invalid_api_key: {
+      title: "Invalid API Key",
+      hint: "The key you provided was rejected by the AI provider. Please check it in Settings.",
+      action: "settings",
+      statusText: "Invalid API key — check settings",
+      statusColor: "bg-amber-500",
+    },
+    rate_limit: {
+      title: "Rate Limit Reached",
+      hint: "Your API key has hit its request-rate limit. Wait a moment, then try again.",
+      action: null,
+      statusText: "Rate limit — try again shortly",
+      statusColor: "bg-yellow-500",
+    },
+    quota_exceeded: {
+      title: "API Quota Exceeded",
+      hint: "Your API key has run out of credits or reached its monthly quota. Check your billing in the provider dashboard.",
+      action: null,
+      statusText: "Quota exceeded",
+      statusColor: "bg-red-500",
+    },
+    forbidden: {
+      title: "API Access Denied",
+      hint: "The API key does not have permission for this operation, or the provider has blocked the request.",
+      action: null,
+      statusText: "Access denied",
+      statusColor: "bg-red-500",
+    },
+    not_found: {
+      title: "Repository Not Found",
+      hint: "GitHub could not find this repository.",
+      action: null,
+      statusText: "Repository not found",
+      statusColor: "bg-red-500",
+    },
+    github_rate_limit: {
+      title: "GitHub Rate Limit",
+      hint: "GitHub's API is temporarily rate-limiting this server. Try again in a few minutes.",
+      action: null,
+      statusText: "GitHub rate limit — try again",
+      statusColor: "bg-yellow-500",
+    },
+    server_error: {
+      title: "Server Error",
+      hint: "An unexpected error occurred on the server. Please try again.",
+      action: null,
+      statusText: "Server error",
+      statusColor: "bg-red-500",
+    },
+  };
+
+  const def = ERROR_MAP[errorCode] ?? {
+    title: "Summary Failed",
+    hint: rawMessage || "An unknown error occurred.",
+    action: null,
+    statusText: "Summary failed",
+    statusColor: "bg-red-500",
+  };
+
+  readerBody.classList.remove("opacity-50");
+  readerBody.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-12 text-center">
+      <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+      </div>
+      <h3 class="text-lg font-medium text-textMain mb-2">${escapeHtml(def.title)}</h3>
+      <p class="text-textMuted text-sm max-w-md">${escapeHtml(def.hint)}</p>
+    </div>`;
+  readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${def.statusColor} shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${escapeHtml(def.statusText)}</span></span>`;
+
+  if (def.action === "settings") {
+    openSettingsBtn.click();
   }
 }
 
@@ -1494,7 +1556,15 @@ async function loadWordCloud() {
     });
     const data = await res.json();
 
-    if (data.error) throw new Error(data.error);
+    if (!res.ok || data.error) {
+      const errorCode =
+        data.errorCode ||
+        (res.status === 401 ? "no_api_key" :
+         res.status === 429 ? "rate_limit" :
+         "server_error");
+      renderWordCloudError(errorCode, data.error);
+      return;
+    }
 
     // Update status
     wordcloudStatus.textContent = data.isCached ? "From cache" : "Generated";
@@ -1506,41 +1576,35 @@ async function loadWordCloud() {
     renderWordCloudInsights(data);
   } catch (error) {
     console.error("WordCloud load error:", error);
-    
-    // Use consistent error format
-    let errorMessage = "Failed to load word cloud";
-    let errorHint = "";
-    
-    if (error.message?.includes("401")) {
-      errorMessage = "Invalid API key";
-      errorHint = "The API key you provided is invalid or expired";
-    } else if (error.message?.includes("403")) {
-      errorMessage = "API rate limit exceeded";
-      errorHint = "Please try again in a few minutes";
-    } else if (error.message?.includes("429")) {
-      errorMessage = "Too many requests";
-      errorHint = "Please wait before trying again";
-    }
-    
-    wordcloudStatus.textContent = "Error";
-    wordcloudLoading.classList.add("hidden");
-    wordcloudLoading.classList.remove("flex");
-    
-    // Show error placeholder on canvas
-    const ctx = wordcloudCanvas.getContext("2d");
-    wordcloudCanvas.style.display = "block";
-    ctx.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
-    ctx.fillStyle = "#a1a1aa";
-    ctx.font = "14px Geist Sans, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(errorMessage, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 - 20);
-    
-    if (errorHint) {
-      ctx.font = "12px Geist Sans, sans-serif";
-      ctx.fillStyle = "#71717a";
-      ctx.fillText(errorHint, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 + 10);
-    }
+    renderWordCloudError("server_error", error.message);
   }
+}
+
+function renderWordCloudError(errorCode, rawMessage) {
+  const WORDCLOUD_ERROR_MAP = {
+    no_api_key:        { title: "API Key Required",      hint: "Add your API key in Settings for AI-powered analysis." },
+    invalid_api_key:   { title: "Invalid API Key",       hint: "The key was rejected by the provider — check Settings." },
+    rate_limit:        { title: "Rate Limit Reached",    hint: "Too many requests — wait a moment and try again." },
+    quota_exceeded:    { title: "Quota Exceeded",        hint: "API credits exhausted — check your provider billing." },
+    forbidden:         { title: "Access Denied",         hint: "The API key lacks permission for this request." },
+    github_rate_limit: { title: "GitHub Rate Limit",     hint: "GitHub is temporarily rate-limiting this server." },
+    server_error:      { title: "Server Error",          hint: rawMessage || "An unexpected error occurred." },
+  };
+  const def = WORDCLOUD_ERROR_MAP[errorCode] ?? { title: "Failed", hint: rawMessage || "Unknown error." };
+
+  wordcloudStatus.textContent = def.title;
+  wordcloudLoading.classList.add("hidden");
+  wordcloudLoading.classList.remove("flex");
+  const ctx = wordcloudCanvas.getContext("2d");
+  wordcloudCanvas.style.display = "block";
+  ctx.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
+  ctx.fillStyle = "#a1a1aa";
+  ctx.font = "14px Geist Sans, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(def.title, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 - 20);
+  ctx.font = "12px Geist Sans, sans-serif";
+  ctx.fillStyle = "#71717a";
+  ctx.fillText(def.hint, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 + 10);
 }
 
 function renderWordCloud(words) {
