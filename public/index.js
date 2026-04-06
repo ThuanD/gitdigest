@@ -110,6 +110,7 @@ const readerPane = document.getElementById("readerPane");
 const feedPane = document.getElementById("feedPane");
 const emptyState = document.getElementById("emptyState");
 const readerContent = document.getElementById("readerContent");
+const wordcloudView = document.getElementById("wordcloudView");
 const readerTitle = document.getElementById("readerTitle");
 const readerTitleSourceLink = document.getElementById("readerTitleSourceLink");
 const readerStatus = document.getElementById("readerStatus");
@@ -221,6 +222,7 @@ function resetReaderForFeedSwitch() {
     }
   });
   emptyState.classList.remove("hidden");
+  wordcloudView.classList.add("hidden");
   readerWorkspace.classList.add("hidden");
   readerWorkspace.classList.remove("flex");
   readerContent.classList.add("hidden");
@@ -1301,6 +1303,7 @@ async function handleCardClick(repo, cardElement) {
   }
 
   emptyState.classList.add("hidden");
+  wordcloudView.classList.add("hidden");
   readerWorkspace.classList.remove("hidden");
   readerWorkspace.classList.add("flex");
   readerContent.classList.remove("hidden");
@@ -1732,7 +1735,7 @@ function appendAnswer(container, markdown, isCached = false, isError = false) {
 
 // ─── WordCloud ───────────────────────────────────────────────────────────────────
 wordcloudBtn.addEventListener("click", () => {
-  wordcloudModal.showModal();
+  showWordCloudView();
   loadWordCloud();
 });
 
@@ -1742,7 +1745,19 @@ wordcloudClearBtn.addEventListener("click", () => {
   wordcloudClearBtn.disabled = true;
 });
 
-closeWordcloudBtn.addEventListener("click", () => wordcloudModal.close());
+closeWordcloudBtn.addEventListener("click", () => hideWordCloudView());
+
+function showWordCloudView() {
+  emptyState.classList.add("hidden");
+  readerWorkspace.classList.add("hidden");
+  wordcloudView.classList.remove("hidden");
+  readerPane.classList.remove("hidden");
+}
+
+function hideWordCloudView() {
+  wordcloudView.classList.add("hidden");
+  emptyState.classList.remove("hidden");
+}
 
 async function loadWordCloud() {
   try {
@@ -1977,8 +1992,6 @@ function handleWordCloudClick(word) {
       s.title?.toLowerCase().includes(lw),
   );
 
-  wordcloudModal.close();
-
   if (filteredRepos.length === 0) return;
 
   const savedAll = allRepos;
@@ -1986,6 +1999,9 @@ function handleWordCloudClick(word) {
   allRepos = savedAll;
 
   wordcloudClearBtn.disabled = false;
+  
+  // Keep WordCloud visible, just scroll to show the filtered results
+  // The WordCloud remains in readerPane, repos are filtered in the sidebar
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
