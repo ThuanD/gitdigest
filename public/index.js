@@ -776,14 +776,35 @@ function renderReadmeError(err, repo) {
   const host = getOrCreateReadmeHost();
   const shadowRoot = getOrCreateShadowRoot(host);
   
+  // Use consistent error format
+  let errorMessage = "Failed to load README";
+  let errorHint = "";
+  
+  if (err.message?.includes("403")) {
+    errorMessage = "GitHub API rate limit exceeded";
+    errorHint = "Please wait a few minutes before trying again";
+  } else if (err.message?.includes("404")) {
+    errorMessage = "Repository not found";
+    errorHint = "The repository may have been deleted or moved";
+  } else if (err.message?.includes("401")) {
+    errorMessage = "Authentication failed";
+    errorHint = "Check your GitHub token configuration";
+  } else if (err.message?.includes("fullName")) {
+    errorMessage = "Repository data corrupted";
+    errorHint = "Please refresh the repository list";
+  }
+  
   const styles = getErrorStyles();
   const content = `
-    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-    </svg>
-    <p class="error-text">Failed to load README</p>
-    <p class="error-detail">${err.message}</p>
-    <a href="${repo.url}" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+    <div class="text-center py-8">
+      <svg class="w-12 h-12 mb-4 text-borderSubtle mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <p class="text-sm text-textMuted mb-2">${errorMessage}</p>
+      ${errorHint ? `<p class="text-xs text-textMuted mb-3">${errorHint}</p>` : ""}
+      <a href="${repo.url}" target="_blank" rel="noopener noreferrer" class="text-xs text-hn hover:underline">View on GitHub ↗</a>
+      <button onclick="loadGitHubRepo('${repo.id}')" class="text-xs text-hn hover:underline ml-2">Retry ↻</button>
+    </div>
   `;
   
   shadowRoot.innerHTML = styles + content;
@@ -906,9 +927,25 @@ async function loadGitHubIssues(repoId, container) {
     container.appendChild(footerEl);
   } catch (error) {
     console.error("Failed to load GitHub issues:", error);
+    
+    let errorMessage = "Failed to load issues";
+    let errorHint = "";
+    
+    if (error.message?.includes("403")) {
+      errorMessage = "GitHub API rate limit exceeded";
+      errorHint = "Please wait a few minutes before trying again";
+    } else if (error.message?.includes("404")) {
+      errorMessage = "No issues found";
+      errorHint = "This repository may not have any open issues";
+    } else if (error.message?.includes("401")) {
+      errorMessage = "Authentication failed";
+      errorHint = "Check your GitHub token configuration";
+    }
+    
     container.innerHTML = `
       <div class="text-center py-8">
-        <p class="text-sm text-textMuted mb-2">Failed to load issues</p>
+        <p class="text-sm text-textMuted mb-2">${errorMessage}</p>
+        ${errorHint ? `<p class="text-xs text-textMuted mb-3">${errorHint}</p>` : ""}
         <button onclick="loadGitHubIssues('${repoId}', this.closest('.text-center').parentElement)"
           class="text-xs text-hn hover:underline">Retry ↻</button>
       </div>`;
@@ -1105,6 +1142,18 @@ async function loadReposClient(page = 1) {
     }
   } catch (e) {
     console.error("Load repos error:", e);
+    
+    // Use consistent error format
+    let errorMessage = "Failed to load repositories";
+    let errorHint = "";
+    
+    if (e.message?.includes("403")) {
+      errorMessage = "GitHub API rate limit exceeded";
+      errorHint = "Please wait a few minutes before trying again";
+    } else if (e.message?.includes("401")) {
+      errorMessage = "Authentication failed";
+      errorHint = "Check your GitHub token configuration";
+    }
 
     // Remove loading status
     statusDot.classList.remove("animate-pulse");
@@ -1115,10 +1164,14 @@ async function loadReposClient(page = 1) {
       .forEach((el) => el.remove());
     if (page === 1) {
       feedList.innerHTML = `
-        <div class="col-span-full text-center py-8 text-textMuted">
-          <p class="mb-2">Failed to load repositories</p>
+        <div class="col-span-full text-center py-8">
+          <svg class="w-12 h-12 mb-4 text-borderSubtle mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <p class="text-sm text-textMuted mb-2">${errorMessage}</p>
+          ${errorHint ? `<p class="text-xs text-textMuted mb-3">${errorHint}</p>` : ""}
           <button type="button" onclick="location.reload()"
-            class="px-4 py-2 bg-hn text-white rounded-lg hover:bg-hn/90 transition-colors">Retry</button>
+            class="px-4 py-2 bg-hn text-white rounded-lg hover:bg-hn/90 transition-colors">Retry ↻</button>
         </div>`;
     } else {
       loadMoreBtn.textContent = "Failed to load";
@@ -1390,8 +1443,16 @@ async function loadSummaryForRepo(repo) {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
           </svg>
         </div>
-        <h3 class="text-lg font-medium text-textMain mb-2">Summary Failed</h3>
-        <p class="text-textMuted text-sm max-w-md">Failed to generate summary. Please check your API key and try again.</p>
+        <h3 class="text-lg font-medium text-textMain mb-2">${err.message?.includes("401") ? "Invalid API Key" : "Summary Failed"}</h3>
+        <p class="text-textMuted text-sm max-w-md">
+          ${err.message?.includes("401") 
+            ? "The API key you provided is invalid or expired. Please check your API key in settings."
+            : err.message?.includes("403")
+            ? "API rate limit exceeded. Please try again in a few minutes."
+            : err.message?.includes("429")
+            ? "Too many requests. Please wait before trying again."
+            : "Failed to generate summary. Please check your API key and try again."}
+        </p>
       </div>`;
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">Summary failed — check API key</span></span>`;
   }
@@ -1441,9 +1502,26 @@ async function loadWordCloud() {
     renderWordCloudInsights(data);
   } catch (error) {
     console.error("WordCloud load error:", error);
+    
+    // Use consistent error format
+    let errorMessage = "Failed to load word cloud";
+    let errorHint = "";
+    
+    if (error.message?.includes("401")) {
+      errorMessage = "Invalid API key";
+      errorHint = "The API key you provided is invalid or expired";
+    } else if (error.message?.includes("403")) {
+      errorMessage = "API rate limit exceeded";
+      errorHint = "Please try again in a few minutes";
+    } else if (error.message?.includes("429")) {
+      errorMessage = "Too many requests";
+      errorHint = "Please wait before trying again";
+    }
+    
     wordcloudStatus.textContent = "Error";
     wordcloudLoading.classList.add("hidden");
     wordcloudLoading.classList.remove("flex");
+    
     // Show error placeholder on canvas
     const ctx = wordcloudCanvas.getContext("2d");
     wordcloudCanvas.style.display = "block";
@@ -1451,13 +1529,13 @@ async function loadWordCloud() {
     ctx.fillStyle = "#a1a1aa";
     ctx.font = "14px Geist Sans, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(
-      error.message?.includes("401")
-        ? "API key required"
-        : "Failed to load — try again",
-      wordcloudCanvas.width / 2,
-      wordcloudCanvas.height / 2,
-    );
+    ctx.fillText(errorMessage, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 - 20);
+    
+    if (errorHint) {
+      ctx.font = "12px Geist Sans, sans-serif";
+      ctx.fillStyle = "#71717a";
+      ctx.fillText(errorHint, wordcloudCanvas.width / 2, wordcloudCanvas.height / 2 + 10);
+    }
   }
 }
 
