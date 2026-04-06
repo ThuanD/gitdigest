@@ -119,6 +119,7 @@ function mapGitHubRepo(repo) {
     htmlUrl: repo.html_url,
     stars: repo.stargazers_count,
     owner: repo.owner.login,
+    defaultBranch: repo.default_branch,
     createdAt: Math.floor(new Date(repo.created_at).getTime() / 1000),
     pushedAt: Math.floor(new Date(repo.pushed_at).getTime() / 1000),
     description: repo.description,
@@ -131,6 +132,7 @@ function mapGitHubRepo(repo) {
 
 function mapRepoIssue(issue) {
   return {
+    title: issue.title,
     labels: issue.labels,
     html_url: issue.html_url,
     number: issue.number,

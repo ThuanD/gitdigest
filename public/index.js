@@ -669,8 +669,8 @@ function getReadmeHtml(data, repo) {
   }
   
   // Fallback to our own markdown parsing
-  const fullName = data.rawApiResponse?.full_name || repo.id;
-  const branch = data.rawApiResponse?.default_branch || "main";
+  const fullName = data.rawApiResponse?.fullName || repo.id;
+  const branch = data.rawApiResponse?.defaultBranch || "main";
   const md = resolveReadmeImages(
     data.readmeContent || "*No README available.*",
     fullName,
