@@ -242,10 +242,16 @@ dialog::backdrop {
 
 /* ── Chat chips ──────────────────────────────────────────────────────────── */
 .chat-chip {
+  display: flex;
+  align-items: left;
+  justify-content: flex-start;
   transition:
     border-color 0.15s ease,
     color 0.15s ease,
     opacity 0.15s ease;
+}
+.chat-chip .chip-label {
+  text-align: left;
 }
 .chat-chip:not(:disabled):hover {
   border-color: rgba(255, 102, 0, 0.5);

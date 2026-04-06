@@ -1448,7 +1448,7 @@ async function loadSummaryForRepo(repo) {
 }
 
 // ─── Chat (preset questions) ───────────────────────────────────────────────────
-const CHAT_QUESTIONS = [
+const CHAT_QUESTIONS_EN = [
   { id: "trending_analysis", label: "🔥 Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives." },
   { id: "fork_utility", label: "🍴 What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?" },
   { id: "practicality", label: "🏭 Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today." },
@@ -1457,6 +1457,17 @@ const CHAT_QUESTIONS = [
   { id: "best_practices", label: "🎓 What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?" },
   { id: "limitations", label: "⚠️ What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it." },
   { id: "issue_health", label: "🐛 Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?" },
+];
+
+const CHAT_QUESTIONS_VI = [
+  { id: "trending_analysis", label: "🔥 Tại sao repo này đang trending? Phân tích điểm bán hàng độc đáo, khoảng trống trong hệ sinh thái mà nó lấp đầy, và tại sao lập trình viên hào hứng với nó ngay bây giờ so với các lựa chọn thay thế đã có." },
+  { id: "fork_utility", label: "🍴 Lập trình viên thường dùng fork để làm gì? Chủ yếu được dùng làm tài liệu tham khảo, cơ sở để tùy chỉnh, hay boilerplate sẵn sàng cho production? Những tín hiệu nào trong codebase hỗ trợ câu trả lời của bạn?" },
+  { id: "practicality", label: "🏭 Đây chỉ là một thử nghiệm thú vị hay đã sẵn sàng cho production thực tế? Đưa ra đánh giá trung thực về độ trưởng thành, tín hiệu test coverage, tần suất release, và những đánh đổi quan trọng nhất nếu ai đó deploy hôm nay." },
+  { id: "tech_stack", label: "🏗️ Công nghệ cốt lõi và quyết định kiến trúc chính trong project này? Các thành phần chính được tách rời hay tích hợp như thế nào? Nêu bật điều gì không thông thường hoặc đặc biệt thanh lịch." },
+  { id: "quick_start", label: "🚀 Cách nhanh nhất để chạy demo? Có những yêu cầu tiềm ẩn, bước thiết lập không rõ ràng, hay trở ngại phổ biến nào mà lập trình viên nên biết trước khi bắt đầu?" },
+  { id: "best_practices", label: "🎓 Mẫu coding chất lượng cao, quyết định thiết kế, hay thực hành kỹ thuật phần mềm nào được thể hiện trong codebase này mà lập trình viên nên học? Điều gì làm code này đáng đọc?" },
+  { id: "limitations", label: "⚠️ Project này KHÔNG thể làm gì? Liệt kê những hạn chế kỹ thuật lớn nhất, tính năng còn thiếu, trần scalability, hay trường hợp edge đã biết có thể gây vấn đề khi mở rộng hay scaling nó." },
+  { id: "issue_health", label: "🐛 Dựa trên các issue mở và tín hiệu repository, sức khỏe tổng thể của project này là gì? Có bug nghiêm trọng chưa giải quyết, điểm đau dai dẳng, CVE đã biết, hay lo ngại bảo mật nào mà lập trình viên nên biết trước khi áp dụng nó?" },
 ];
 
 // In-memory cache: "repoId_questionId_lang" → answer string
@@ -1566,11 +1577,15 @@ function renderChatSection(repo) {
   const el = document.createElement("div");
   el.id = "readerChat";
   el.className = "mt-10 border-t border-borderSubtle pt-8";
+  
+  // Choose questions based on current language
+  const questions = currentLang === "vi" ? CHAT_QUESTIONS_VI : CHAT_QUESTIONS_EN;
+  
   el.innerHTML = `
     <p class="text-xs font-mono text-textMuted uppercase tracking-wider mb-4">Ask about this repo</p>
     <div id="chatMessages" class="space-y-4 mb-6"></div>
     <div id="chatChips" class="flex flex-wrap gap-2 pb-8">
-      ${CHAT_QUESTIONS.map(
+      ${questions.map(
         (q) => `
         <button data-qid="${q.id}"
           class="chat-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-borderSubtle bg-appBg text-xs text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
