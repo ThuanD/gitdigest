@@ -1320,11 +1320,11 @@ async function loadReposClient(page = 1) {
 function renderReposFromIds(repos, page = 1) {
   if (page === 1) {
     allRepos = repos;
+    feedList.innerHTML = "";
   } else {
     allRepos = [...allRepos, ...repos];
   }
   currentRepos = allRepos;
-  feedList.innerHTML = "";
 
   const frag = document.createDocumentFragment();
   repos.forEach((repo, i) => {
