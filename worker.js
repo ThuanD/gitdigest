@@ -609,6 +609,17 @@ async function callOpenAI(systemPrompt, userPrompt, apiKey) {
       temperature: 0.45,
       max_tokens: 4096,
     };
+  } else if (apiKey.startsWith("sk-or-")) {
+    apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+    requestBody = {
+      model: "nvidia/nemotron-3-super-120b-a12b:free",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.45,
+      max_tokens: 4096,
+    };
   } else if (apiKey.startsWith("sk-")) {
     apiUrl = "https://api.openai.com/v1/chat/completions";
     requestBody = {
