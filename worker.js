@@ -12,44 +12,6 @@ const wordcloudCache = new Map();
 const askCache = new Map(); // key: "ask_repoId_questionId_lang"
 const ASK_CACHE_MAX = 1000;
 
-/**
- * Predefined questions the client is allowed to ask.
- * The key is a stable ID sent from the client; the value is the full question
- * sent to the AI. Keeping the list server-side prevents prompt injection.
- */
-const ASK_QUESTIONS = {
-  // 1. Why trending?
-  trending_analysis:
-    "Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives.",
-
-  // 2. What do forkers actually do?
-  fork_utility:
-    "What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?",
-
-  // 3. Production-readiness (honest take)
-  practicality:
-    "Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today.",
-
-  // 4. Tech stack & architecture deep dive
-  tech_stack:
-    "What are the core technologies and key architectural decisions in this project? How are the main components decoupled or integrated? Highlight anything unconventional or particularly elegant.",
-
-  // 5. Fastest path to a running demo
-  quick_start:
-    "What is the fastest way to get a working demo running locally? Are there any hidden prerequisites, non-obvious setup steps, or common stumbling blocks a developer should know before starting?",
-
-  // 6. Code quality & patterns worth studying
-  best_practices:
-    "What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?",
-
-  // 7. Honest limitations
-  limitations:
-    "What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it.",
-
-  // 8. Issue health & security posture
-  issue_health:
-    "Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?",
-};
 
 // ─── Custom exceptions ──────────────────────────────────────────────
 class RateLimitError extends Error {}
@@ -195,19 +157,6 @@ function mapGitHubRepo(repo) {
     topics: repo.topics || [],
     forks: repo.forks_count,
     readmeUrl: `${repo.html_url}/blob/main/README.md`,
-  };
-}
-
-function mapRepoIssue(issue) {
-  return {
-    title: issue.title,
-    labels: issue.labels,
-    html_url: issue.html_url,
-    number: issue.number,
-    user: issue.user,
-    comments: issue.comments,
-    state: issue.state,
-    created_at: issue.created_at,
   };
 }
 
@@ -367,53 +316,6 @@ async function fetchGitHubRepo(repoId, env) {
     // to proper HTTP responses. Only log unexpected errors.
     if (error instanceof NotFoundError || error instanceof RateLimitError) throw error;
     console.error("Failed to load GitHub repo:", error);
-    throw error;
-  }
-}
-
-async function fetchGitHubIssues(repoId, env) {
-  try {
-    let isRepoCached = false;
-    const cached = repoCache.get(repoId);
-    if (cached && Date.now() - cached.time < LIST_CACHE_TTL) {
-      if (cached.issues) {
-        return { issues: cached.issues, isCached: true };
-      }
-      isRepoCached = true;
-    }
-
-    const issuesUrl = `https://api.github.com/repos/${repoId}/issues?state=open&sort=created&direction=desc&per_page=25`;
-    const response = await fetch(issuesUrl, {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "Github-Digest-Worker",
-        ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` }),
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 403) {
-        const errorData = await response.json().catch(() => ({}));
-        if (errorData.message?.includes("rate limit")) {
-          throw new RateLimitError("GitHub API rate limit exceeded");
-        }
-      }
-      if (response.status === 404) {
-        throw new NotFoundError("Repository not found or no issues");
-      }
-      throw new Error(`GitHub API error: ${response.status}`);
-    }
-
-    const issues = await response.json();
-    const issueData = issues.map(mapRepoIssue);
-
-    if (isRepoCached) {
-      repoCacheSet(repoId, { ...cached, issues: issueData });
-    }
-    return issueData;
-  } catch (error) {
-    if (error instanceof NotFoundError || error instanceof RateLimitError) throw error;
-    console.error("Failed to load GitHub issues:", error);
     throw error;
   }
 }
@@ -849,26 +751,6 @@ async function handleRepoDetails(request, url, env) {
   }
 }
 
-async function handleGitHubIssues(request, url, env) {
-  try {
-    const repoId = url.searchParams.get("repoId");
-    if (!repoId) {
-      return json({ error: "Missing repository ID" }, 400);
-    }
-
-    const issues = await fetchGitHubIssues(repoId, env);
-
-    return json({
-      issues,
-      repo_url: `https://github.com/${repoId}`,
-      count: issues.length,
-    });
-  } catch (error) {
-    console.error("GitHub Issues fetch error:", error);
-    return json({ error: "Failed to fetch issues" }, 500);
-  }
-}
-
 async function handleSummarize(request, url, env) {
   try {
     const repoId = url.searchParams.get("repoId");
@@ -1036,16 +918,16 @@ async function generateSummary(repoId, lang, apiKey, env) {
 async function handleAsk(request, url, env) {
   try {
     // Accept both POST (preferred) and GET (legacy)
-    let repoId, questionId, lang, clientSummary;
+    let repoId, question, lang, clientSummary;
     if (request.method === "POST") {
       const body = await request.json().catch(() => ({}));
       repoId        = body.repoId;
-      questionId    = body.questionId;
+      question      = body.question;
       lang          = (body.lang || "en").slice(0, 12);
       clientSummary = typeof body.summary === "string" ? body.summary.slice(0, 24000) : "";
     } else {
       repoId        = url.searchParams.get("repoId");
-      questionId    = url.searchParams.get("questionId");
+      question      = url.searchParams.get("question");
       lang          = (url.searchParams.get("lang") || "en").slice(0, 12);
       clientSummary = "";
     }
@@ -1053,12 +935,13 @@ async function handleAsk(request, url, env) {
     if (!repoId) {
       return json({ error: "Missing repoId", errorCode: "bad_request" }, 400);
     }
-    if (!questionId || !ASK_QUESTIONS[questionId]) {
-      return json({ error: "Invalid or unknown questionId", errorCode: "bad_request" }, 400);
+    if (!question) {
+      return json({ error: "Missing question", errorCode: "bad_request" }, 400);
     }
 
-    // Check answer cache first
-    const cacheKey = `ask_${repoId}_${questionId}_${lang}`;
+    // Check answer cache first - use question hash as key
+    const questionHash = question.slice(0, 100).replace(/[^a-zA-Z0-9]/g, '_');
+    const cacheKey = `ask_${repoId}_${questionHash}_${lang}`;
     if (askCache.has(cacheKey)) {
       cacheStats.askCacheHits++;
       return json({ answer: askCache.get(cacheKey), isCached: true });
@@ -1088,28 +971,11 @@ async function handleAsk(request, url, env) {
       }, 400);
     }
 
-    // Build context — for issue_health we enrich with live issues data
+    // Build context
     let extraContext = "";
-    if (questionId === "issue_health") {
-      try {
-        const issuesData = await fetchGitHubIssues(repoId, env);
-        const issues = Array.isArray(issuesData) ? issuesData : (issuesData.issues || []);
-        if (issues.length > 0) {
-          const issueLines = issues.slice(0, 20).map(i => {
-            const labels = (i.labels || []).map(l => l.name || l).join(", ");
-            return `- #${i.number} [${labels || "no labels"}] ${i.title} (${i.comments} comments, opened ${i.created_at?.slice(0, 10)})`;
-          }).join("\n");
-          extraContext = `\n\nOpen Issues (top ${Math.min(issues.length, 20)} of ${issues.length}):\n${issueLines}`;
-        } else {
-          extraContext = "\n\nOpen Issues: none found (repo may have issues disabled or zero open issues).";
-        }
-      } catch {
-        // Issues fetch failed — continue without it, AI will note limited data
-        extraContext = "\n\nOpen Issues: could not be fetched at this time.";
-      }
+    if (question.toLowerCase().includes("issue") || question.toLowerCase().includes("health")) {
+      extraContext = "\n\nOpen Issues: Issue analysis temporarily unavailable.";
     }
-
-    const questionText = ASK_QUESTIONS[questionId];
 
     const systemPrompt = `You are a sharp, opinionated technical analyst reviewing GitHub repositories for senior developers.
 Answer in the language matching ISO code: '${lang}'.
@@ -1117,7 +983,7 @@ Be specific, concrete, and data-driven — cite signals from the summary or issu
 Avoid generic advice. Use markdown formatting (bold key terms, use short bullet lists only when listing distinct items).
 Target length: 180–320 words. Never pad the response.`;
 
-    const userPrompt = `Repository summary:\n${summary}${extraContext}\n\nQuestion: ${questionText}`;
+    const userPrompt = `Repository summary:\n${summary}${extraContext}\n\nQuestion: ${question}`;
 
     const answer = await callOpenAI(systemPrompt, userPrompt, apiKey);
     askCacheSet(cacheKey, answer);
@@ -1510,10 +1376,6 @@ export default {
 
       if (url.pathname === "/api/repo") {
         return await handleRepoDetails(request, url, env);
-      }
-
-      if (url.pathname === "/api/issues") {
-        return handleGitHubIssues(request, url, env);
       }
 
       if (url.pathname === "/api/summarize") {

@@ -126,13 +126,12 @@ const readerSourceIframeWrap = document.getElementById(
 const readerCommentsToggleWrap = document.getElementById(
   "readerCommentsToggleWrap",
 );
-const readerIssuesBtn = document.getElementById("readerIssuesBtn"); // was readerHnBtn
+const readerChatBtn = document.getElementById("readerChatBtn"); // was readerHnBtn
 const readerWorkspace = document.getElementById("readerWorkspace");
 const commentsPane = document.getElementById("commentsPane");
 const commentsBody = document.getElementById("commentsBody");
 const commentsBackdrop = document.getElementById("commentsBackdrop");
 const closeCommentsBtn = document.getElementById("closeCommentsBtn");
-const commentsExternalLink = document.getElementById("commentsExternalLink");
 const mobileBackBtn = document.getElementById("mobileBackBtn");
 const statusTextEl = document.getElementById("statusText");
 const activityGraph = document.getElementById("activityGraph");
@@ -826,11 +825,11 @@ function toggleSourcePanelFromUi() {
   else void openSourcePanelForRepo(currentActiveRepo, true);
 }
 
-// ─── Comments / Issues panel ──────────────────────────────────────────────────
+// ─── Chat panel ──────────────────────────────────────────────────
 function syncCommentsButtonUi() {
   const open = !commentsPane.classList.contains("hidden");
-  readerIssuesBtn.classList.toggle("feed-kind-active", open);
-  readerIssuesBtn.setAttribute("aria-pressed", open ? "true" : "false");
+  readerChatBtn.classList.toggle("feed-kind-active", open);
+  readerChatBtn.setAttribute("aria-pressed", open ? "true" : "false");
 }
 
 function openCommentsPanelForRepo(repo, persistPreference) {
@@ -838,8 +837,7 @@ function openCommentsPanelForRepo(repo, persistPreference) {
   commentsPane.classList.remove("hidden");
   commentsPane.classList.add("flex");
   if (window.innerWidth < 768) commentsBackdrop.classList.remove("hidden");
-  commentsExternalLink.href = `${repo.url}/issues`;
-  loadGitHubIssues(repo.id, commentsBody);
+  loadChatContent(repo, commentsBody);
   if (persistPreference) setCommentsOpenPreference(true);
   syncCommentsButtonUi();
 }
@@ -855,111 +853,238 @@ function closeCommentsPanel(persistPreference) {
 closeCommentsBtn.addEventListener("click", () => closeCommentsPanel(true));
 commentsBackdrop.addEventListener("click", () => closeCommentsPanel(true));
 
-// ─── GitHub Issues loader ─────────────────────────────────────────────────────
-async function loadGitHubIssues(repoId, container) {
+// ───// Chat content loader for sidebar
+function loadChatContent(repo, container) {
+  // Show brief loading state
   container.innerHTML = `
-    <div class="flex items-center justify-center py-8">
+    <div class="flex items-center justify-center flex-1 py-8">
       <div class="animate-spin h-4 w-4 border-2 border-hn border-t-transparent rounded-full"></div>
-      <span class="ml-2 text-sm text-textMuted">Loading issues...</span>
+      <span class="ml-2 text-sm text-textMuted">Loading chat...</span>
     </div>`;
 
-  try {
-    const [owner, repo] = repoId.split("/");
-    if (!owner || !repo) {
-      container.innerHTML =
-        '<p class="text-sm text-textMuted px-2 py-10 text-center">Invalid repository format.</p>';
-      return;
-    }
+  // Small defer so loading flash is visible, then render
+  setTimeout(() => {
+    try {
+      container.innerHTML = "";
 
-    const issuesRes = await fetch(`/api/issues?repoId=${repoId}`);
-    if (!issuesRes.ok)
-      throw new Error(`Failed to fetch issues: ${issuesRes.status}`);
+      // Check if summary exists
+      const hasSummary =
+        readerBody.textContent && readerBody.textContent.trim() !== "";
 
-    const data = await issuesRes.json();
-    if (data.error) {
-      container.innerHTML = `<p class="text-sm text-textMuted px-2 py-10 text-center">${data.error}</p>`;
-      return;
-    }
+      if (!hasSummary) {
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
+            <div class="w-10 h-10 rounded-full bg-surface border border-borderSubtle flex items-center justify-center mb-3">
+              <svg class="w-5 h-5 text-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-4 4v-4z"/>
+              </svg>
+            </div>
+            <p class="text-sm text-textMuted mb-1">Generate a summary first</p>
+            <p class="text-xs text-textMuted/60">Chat unlocks once the repository summary is loaded.</p>
+          </div>`;
+        return;
+      }
 
-    const issues = data.issues || [];
-    if (issues.length === 0) {
-      container.innerHTML = `
-        <div class="text-center py-8">
-          <p class="text-sm text-textMuted mb-2">No issues found</p>
-          <a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">View on GitHub ↗</a>
+      // ── Messages area ──
+      const messagesEl = document.createElement("div");
+      messagesEl.id = "sidebarChatMessages";
+      messagesEl.className = "flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3";
+      container.appendChild(messagesEl);
+
+      // ── Bottom area: chips + input ──
+      const bottomEl = document.createElement("div");
+      bottomEl.className = "shrink-0 border-t border-borderSubtle";
+
+      const questions =
+        currentLang === "vi" ? CHAT_QUESTIONS_VI : CHAT_QUESTIONS_EN;
+      bottomEl.innerHTML = `
+        <div class="px-3 pt-3 pb-2 flex flex-wrap gap-1.5">
+          ${questions
+            .map(
+              (q) => `
+            <button data-qid="${q.id}"
+              class="sidebar-chat-chip px-2.5 py-1 rounded-full border border-borderSubtle bg-appBg text-[11px] text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
+              ${escapeHtml(q.label)}
+            </button>`,
+            )
+            .join("")}
+        </div>
+        <div class="flex gap-2 px-3 pb-3">
+          <input
+            id="sidebarChatInput"
+            type="text"
+            placeholder="Ask anything…"
+            class="flex-1 bg-appBg border border-borderSubtle rounded-lg px-3 py-2 text-xs text-textMain placeholder-textMuted/50 focus:outline-none focus:border-hn transition-colors font-mono"
+          />
+          <button
+            id="sidebarChatSendBtn"
+            type="button"
+            class="shrink-0 px-3 py-2 bg-hn/10 border border-hn/30 hover:bg-hn/20 rounded-lg text-[11px] text-hn font-mono transition-colors"
+          >Send</button>
         </div>`;
-      return;
+
+      // Chip listeners — send the full question text
+      bottomEl.querySelectorAll(".sidebar-chat-chip").forEach((btn) => {
+        const q = questions.find((x) => x.id === btn.dataset.qid);
+        if (!q) return;
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          handleSidebarAsk(q.question, btn, repo);
+        });
+      });
+
+      // Text input listeners
+      const inputEl = bottomEl.querySelector("#sidebarChatInput");
+      const sendBtn = bottomEl.querySelector("#sidebarChatSendBtn");
+      const doSend = () => {
+        const text = inputEl.value.trim();
+        if (!text) return;
+        inputEl.value = "";
+        handleSidebarAsk(text, null, repo);
+      };
+      sendBtn.addEventListener("click", doSend);
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          doSend();
+        }
+      });
+
+      container.appendChild(bottomEl);
+    } catch (error) {
+      console.error("Failed to load chat content:", error);
+      container.innerHTML = `
+        <div class="flex flex-col items-center justify-center flex-1 py-8 text-center">
+          <p class="text-sm text-textMuted mb-2">Failed to load chat</p>
+        </div>`;
     }
+  }, 60);
+}
 
-    container.innerHTML = "";
-    const listRoot = document.createElement("div");
-    listRoot.className = "space-y-4";
+// Handle sidebar chat — chip or custom input
+function handleSidebarAsk(questionText, chipBtn, repo) {
+  const cacheKey = `sidebar_${repo.id}_${questionText.slice(0, 80)}_${currentLang}`;
 
-    issues.forEach((issue) => {
-      const issueEl = document.createElement("div");
-      issueEl.className =
-        "border border-borderSubtle rounded-lg p-4 hover:bg-surfaceHover transition-colors";
-
-      const labels = (issue.labels || [])
-        .map(
-          (label) =>
-            `<span class="inline-block px-2 py-1 text-xs rounded-full" style="background-color:${label.color}20;color:${label.color}">${label.name}</span>`,
-        )
-        .join(" ");
-
-      issueEl.innerHTML = `
-        <div class="flex items-start justify-between mb-2">
-          <h3 class="font-medium text-sm text-textMain">
-            <a href="${issue.html_url}" target="_blank" class="hover:text-hn transition-colors">${escapeHtml(issue.title)}</a>
-          </h3>
-          <span class="text-xs text-textMuted">#${issue.number}</span>
-        </div>
-        <div class="flex items-center gap-4 text-xs text-textMuted mb-2">
-          <span>👤 ${escapeHtml(issue.user.login)}</span>
-          <span>💬 ${issue.comments}</span>
-          <span>⏰ ${new Date(issue.created_at).toLocaleDateString()}</span>
-          ${
-            issue.state === "open"
-              ? '<span class="text-green-500">🟢 Open</span>'
-              : '<span class="text-red-500">🔴 Closed</span>'
-          }
-        </div>
-        ${labels ? `<div class="flex flex-wrap gap-1">${labels}</div>` : ""}`;
-
-      listRoot.appendChild(issueEl);
-    });
-
-    container.appendChild(listRoot);
-
-    const footerEl = document.createElement("div");
-    footerEl.className = "text-center py-4 border-t border-borderSubtle mt-4";
-    footerEl.innerHTML = `<a href="${data.repo_url}/issues" target="_blank" class="text-xs text-hn hover:underline">View all issues on GitHub ↗</a>`;
-    container.appendChild(footerEl);
-  } catch (error) {
-    console.error("Failed to load GitHub issues:", error);
-
-    let errorMessage = "Failed to load issues";
-    let errorHint = "";
-
-    if (error.message?.includes("403")) {
-      errorMessage = "GitHub API rate limit exceeded";
-      errorHint = "Please wait a few minutes before trying again";
-    } else if (error.message?.includes("404")) {
-      errorMessage = "No issues found";
-      errorHint = "This repository may not have any open issues";
-    } else if (error.message?.includes("401")) {
-      errorMessage = "Authentication failed";
-      errorHint = "Check your GitHub token configuration";
-    }
-
-    container.innerHTML = `
-      <div class="text-center py-8">
-        <p class="text-sm text-textMuted mb-2">${errorMessage}</p>
-        ${errorHint ? `<p class="text-xs text-textMuted mb-3">${errorHint}</p>` : ""}
-        <button onclick="loadGitHubIssues('${repoId}', this.closest('.text-center').parentElement)"
-          class="text-xs text-hn hover:underline">Retry ↻</button>
-      </div>`;
+  // Mark chip busy
+  if (chipBtn) {
+    chipBtn.disabled = true;
+    chipBtn.textContent = "⏳ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
   }
+
+  const messages = document.getElementById("sidebarChatMessages");
+  if (!messages) return;
+
+  // User bubble
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-end">
+      <div class="max-w-[85%] bg-hn/10 border border-hn/20 rounded-xl rounded-tr-sm px-3 py-2 text-xs text-textMain">${escapeHtml(questionText)}</div>
+    </div>`,
+  );
+  messages.scrollTop = messages.scrollHeight;
+
+  if (answerCache.has(cacheKey)) {
+    _appendSidebarAnswer(messages, answerCache.get(cacheKey));
+    if (chipBtn) {
+      chipBtn.textContent =
+        "✅ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
+      chipBtn.classList.add("is-answered");
+    }
+    return;
+  }
+
+  // Loading bubble
+  const loadId = `sb-load-${Date.now()}`;
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div id="${loadId}" class="flex justify-start">
+      <div class="bg-surface border border-borderSubtle rounded-xl rounded-tl-sm px-3 py-2 text-xs text-textMuted flex items-center gap-2">
+        ${SPINNER_SVG}<span>Thinking…</span>
+      </div>
+    </div>`,
+  );
+  messages.scrollTop = messages.scrollHeight;
+
+  const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const localSummary =
+    localStorage.getItem(`summary_${repo.id}_${currentLang}`) ||
+    localStorage.getItem(`summary_${repo.id}_en`) ||
+    readerBody.textContent ||
+    "";
+
+  fetch("/api/ask", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      repoId: repo.id,
+      question: questionText,
+      lang: currentLang,
+      summary: localSummary,
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      document.getElementById(loadId)?.remove();
+      if (data.error) {
+        _appendSidebarError(messages, data.error);
+        if (chipBtn) {
+          chipBtn.disabled = false;
+          chipBtn.textContent = chipBtn.textContent.replace(/^⏳\s/, "");
+        }
+        if (
+          data.errorCode === "no_api_key" ||
+          data.errorCode === "invalid_api_key"
+        )
+          openSettingsBtn.click();
+        return;
+      }
+      answerCache.set(cacheKey, data.answer);
+      _appendSidebarAnswer(messages, data.answer, data.isCached);
+      if (chipBtn) {
+        chipBtn.textContent =
+          "✅ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
+        chipBtn.classList.add("is-answered");
+      }
+    })
+    .catch((err) => {
+      document.getElementById(loadId)?.remove();
+      _appendSidebarError(messages, err.message);
+      if (chipBtn) {
+        chipBtn.disabled = false;
+      }
+    });
+}
+
+function _appendSidebarAnswer(messages, answer, isCached = false) {
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-start">
+      <div class="max-w-[90%] bg-surface border border-borderSubtle rounded-xl rounded-tl-sm px-3 py-2.5 text-xs">
+        <div class="prose prose-invert prose-sm max-w-none">${markdownToSafeHtml(answer)}</div>
+        ${isCached ? `<p class="text-[10px] font-mono text-textMuted/40 mt-1.5 text-right">cached</p>` : ""}
+      </div>
+    </div>`,
+  );
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function _appendSidebarError(messages, errorMsg) {
+  messages.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-start">
+      <div class="max-w-[85%] bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 text-xs text-red-400">
+        ${escapeHtml(errorMsg || "Something went wrong")}
+      </div>
+    </div>`,
+  );
+  messages.scrollTop = messages.scrollHeight;
 }
 
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
@@ -1091,7 +1216,7 @@ readerViewSourceBtn.addEventListener("click", () => {
   }
 });
 
-readerIssuesBtn.addEventListener("click", () => {
+readerChatBtn.addEventListener("click", () => {
   if (!currentActiveRepo) return;
   toggleCommentsKeyboard();
 });
@@ -1355,7 +1480,6 @@ async function handleCardClick(repo, cardElement) {
 
   // Show Issues toggle button (only load when panel is actually opened)
   readerCommentsToggleWrap.classList.remove("hidden");
-  commentsExternalLink.href = `${repo.url}/issues`;
 
   readerContent.scrollTop = 0;
 
@@ -1381,7 +1505,11 @@ async function loadSummaryForRepo(repo) {
     readerBody.classList.remove("hidden");
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
-    renderChatSection(repo);
+
+    // Refresh chat panel if it's open
+    if (!commentsPane.classList.contains("hidden")) {
+      loadChatContent(currentActiveRepo, commentsBody);
+    }
 
     // Mark as read when loading from cache too
     const activeCard = document.getElementById(`card-${repo.id}`);
@@ -1431,10 +1559,14 @@ async function loadSummaryForRepo(repo) {
     readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`;
     readerBody.classList.remove("opacity-50");
     readerBody.innerHTML = markdownToSafeHtml(summary);
-    renderChatSection(repo);
     applyBlankTargets(readerBody);
     void readerBody.offsetWidth;
     readerBody.classList.add("animate-reader-in");
+
+    // Refresh chat panel if it's open
+    if (!commentsPane.classList.contains("hidden")) {
+      loadChatContent(currentActiveRepo, commentsBody);
+    }
 
     try {
       localStorage.setItem(localCacheKey, summary);
@@ -1452,25 +1584,105 @@ async function loadSummaryForRepo(repo) {
 
 // ─── Chat (preset questions) ───────────────────────────────────────────────────
 const CHAT_QUESTIONS_EN = [
-  { id: "trending_analysis", label: "🔥 Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives." },
-  { id: "fork_utility", label: "🍴 What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?" },
-  { id: "practicality", label: "🏭 Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today." },
-  { id: "tech_stack", label: "🏗️ What are the core technologies and key architectural decisions in this project? How are the main components decoupled or integrated? Highlight anything unconventional or particularly elegant." },
-  { id: "quick_start", label: "🚀 What is the fastest way to get a working demo running locally? Are there any hidden prerequisites, non-obvious setup steps, or common stumbling blocks a developer should know before starting?" },
-  { id: "best_practices", label: "🎓 What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?" },
-  { id: "limitations", label: "⚠️ What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it." },
-  { id: "issue_health", label: "🐛 Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?" },
+  {
+    id: "trending_analysis",
+    label: "🔥 Why trending?",
+    question:
+      "Why is this project currently trending? Analyze its unique selling point, what gap in the ecosystem it fills, and why developers are excited about it right now compared to established alternatives.",
+  },
+  {
+    id: "fork_utility",
+    label: "🍴 Fork use cases?",
+    question:
+      "What do developers typically do after forking this repo? Is it primarily used as a learning reference, a base for customization, or a production-ready boilerplate? What signals in the codebase support your answer?",
+  },
+  {
+    id: "practicality",
+    label: "🏭 Production ready?",
+    question:
+      "Is this just a cool experiment or is it ready for real-world production? Give an honest assessment of maturity, test coverage signals, release cadence, and the most important trade-offs if someone deploys it today.",
+  },
+  {
+    id: "tech_stack",
+    label: "🏗️ Tech stack?",
+    question:
+      "What are the core technologies and key architectural decisions in this project? How are the main components decoupled or integrated? Highlight anything unconventional or particularly elegant.",
+  },
+  {
+    id: "quick_start",
+    label: "🚀 Quick start?",
+    question:
+      "What is the fastest way to get a working demo running locally? Are there any hidden prerequisites, non-obvious setup steps, or common stumbling blocks a developer should know before starting?",
+  },
+  {
+    id: "best_practices",
+    label: "🎓 Best practices?",
+    question:
+      "What high-quality coding patterns, design decisions, or software engineering practices are demonstrated in this codebase that a developer should study? What makes this code worth reading?",
+  },
+  {
+    id: "limitations",
+    label: "⚠️ Limitations?",
+    question:
+      "What can this project NOT do yet? List the biggest technical limitations, missing features, scalability ceilings, or known edge cases that could cause problems when extending or scaling it.",
+  },
+  {
+    id: "issue_health",
+    label: "🐛 Project health?",
+    question:
+      "Based on the open issues and repository signals, what is the overall health of this project? Are there any critical unresolved bugs, long-standing pain points, known CVEs, or security concerns that a developer should be aware of before adopting it?",
+  },
 ];
 
 const CHAT_QUESTIONS_VI = [
-  { id: "trending_analysis", label: "🔥 Tại sao repo này đang trending? Phân tích điểm bán hàng độc đáo, khoảng trống trong hệ sinh thái mà nó lấp đầy, và tại sao lập trình viên hào hứng với nó ngay bây giờ so với các lựa chọn thay thế đã có." },
-  { id: "fork_utility", label: "🍴 Lập trình viên thường dùng fork để làm gì? Chủ yếu được dùng làm tài liệu tham khảo, cơ sở để tùy chỉnh, hay boilerplate sẵn sàng cho production? Những tín hiệu nào trong codebase hỗ trợ câu trả lời của bạn?" },
-  { id: "practicality", label: "🏭 Đây chỉ là một thử nghiệm thú vị hay đã sẵn sàng cho production thực tế? Đưa ra đánh giá trung thực về độ trưởng thành, tín hiệu test coverage, tần suất release, và những đánh đổi quan trọng nhất nếu ai đó deploy hôm nay." },
-  { id: "tech_stack", label: "🏗️ Công nghệ cốt lõi và quyết định kiến trúc chính trong project này? Các thành phần chính được tách rời hay tích hợp như thế nào? Nêu bật điều gì không thông thường hoặc đặc biệt thanh lịch." },
-  { id: "quick_start", label: "🚀 Cách nhanh nhất để chạy demo? Có những yêu cầu tiềm ẩn, bước thiết lập không rõ ràng, hay trở ngại phổ biến nào mà lập trình viên nên biết trước khi bắt đầu?" },
-  { id: "best_practices", label: "🎓 Mẫu coding chất lượng cao, quyết định thiết kế, hay thực hành kỹ thuật phần mềm nào được thể hiện trong codebase này mà lập trình viên nên học? Điều gì làm code này đáng đọc?" },
-  { id: "limitations", label: "⚠️ Project này KHÔNG thể làm gì? Liệt kê những hạn chế kỹ thuật lớn nhất, tính năng còn thiếu, trần scalability, hay trường hợp edge đã biết có thể gây vấn đề khi mở rộng hay scaling nó." },
-  { id: "issue_health", label: "🐛 Dựa trên các issue mở và tín hiệu repository, sức khỏe tổng thể của project này là gì? Có bug nghiêm trọng chưa giải quyết, điểm đau dai dẳng, CVE đã biết, hay lo ngại bảo mật nào mà lập trình viên nên biết trước khi áp dụng nó?" },
+  {
+    id: "trending_analysis",
+    label: "🔥 Tại sao trending?",
+    question:
+      "Tại sao repo này đang trending? Phân tích điểm bán hàng độc đáo, khoảng trống trong hệ sinh thái mà nó lấp đầy, và tại sao lập trình viên hào hứng với nó ngay bây giờ so với các lựa chọn thay thế đã có.",
+  },
+  {
+    id: "fork_utility",
+    label: "🍴 Fork để làm gì?",
+    question:
+      "Lập trình viên thường dùng fork để làm gì? Chủ yếu được dùng làm tài liệu tham khảo, cơ sở để tùy chỉnh, hay boilerplate sẵn sàng cho production? Những tín hiệu nào trong codebase hỗ trợ câu trả lời của bạn?",
+  },
+  {
+    id: "practicality",
+    label: "🏭 Production chưa?",
+    question:
+      "Đây chỉ là một thử nghiệm thú vị hay đã sẵn sàng cho production thực tế? Đưa ra đánh giá trung thực về độ trưởng thành, tín hiệu test coverage, tần suất release, và những đánh đổi quan trọng nhất nếu ai đó deploy hôm nay.",
+  },
+  {
+    id: "tech_stack",
+    label: "🏗️ Tech stack?",
+    question:
+      "Công nghệ cốt lõi và quyết định kiến trúc chính trong project này? Các thành phần chính được tách rời hay tích hợp như thế nào? Nêu bật điều gì không thông thường hoặc đặc biệt thanh lịch.",
+  },
+  {
+    id: "quick_start",
+    label: "🚀 Bắt đầu nhanh?",
+    question:
+      "Cách nhanh nhất để chạy demo? Có những yêu cầu tiềm ẩn, bước thiết lập không rõ ràng, hay trở ngại phổ biến nào mà lập trình viên nên biết trước khi bắt đầu?",
+  },
+  {
+    id: "best_practices",
+    label: "🎓 Best practices?",
+    question:
+      "Mẫu coding chất lượng cao, quyết định thiết kế, hay thực hành kỹ thuật phần mềm nào được thể hiện trong codebase này mà lập trình viên nên học? Điều gì làm code này đáng đọc?",
+  },
+  {
+    id: "limitations",
+    label: "⚠️ Hạn chế?",
+    question:
+      "Project này KHÔNG thể làm gì? Liệt kê những hạn chế kỹ thuật lớn nhất, tính năng còn thiếu, trần scalability, hay trường hợp edge đã biết có thể gây vấn đề khi mở rộng hay scaling nó.",
+  },
+  {
+    id: "issue_health",
+    label: "🐛 Sức khỏe dự án?",
+    question:
+      "Dựa trên các issue mở và tín hiệu repository, sức khỏe tổng thể của project này là gì? Có bug nghiêm trọng chưa giải quyết, điểm đau dai dẳng, CVE đã biết, hay lo ngại bảo mật nào mà lập trình viên nên biết trước khi áp dụng nó?",
+  },
 ];
 
 // In-memory cache: "repoId_questionId_lang" → answer string
@@ -1572,165 +1784,6 @@ function renderSummaryError(errorCode, rawMessage) {
   if (def.action === "settings") {
     openSettingsBtn.click();
   }
-}
-
-function renderChatSection(repo) {
-  document.getElementById("readerChat")?.remove();
-
-  const el = document.createElement("div");
-  el.id = "readerChat";
-  el.className = "mt-10 border-t border-borderSubtle pt-8";
-  
-  // Choose questions based on current language
-  const questions = currentLang === "vi" ? CHAT_QUESTIONS_VI : CHAT_QUESTIONS_EN;
-  
-  el.innerHTML = `
-    <p class="text-xs font-mono text-textMuted uppercase tracking-wider mb-4">Ask about this repo</p>
-    <div id="chatMessages" class="space-y-4 mb-6"></div>
-    <div id="chatChips" class="flex flex-wrap gap-2 pb-8">
-      ${questions.map(
-        (q) => `
-        <button data-qid="${q.id}"
-          class="chat-chip flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-borderSubtle bg-appBg text-xs text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
-          <span class="chip-label">${escapeHtml(q.label)}</span>
-        </button>`,
-      ).join("")}
-    </div>`;
-
-  // Append to readerPostSlot so it's always a stable sibling of readerBody
-  // and not affected by readerBody.innerHTML resets or source panel toggles
-  readerPostSlot.appendChild(el);
-
-  el.querySelectorAll(".chat-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const label = btn.querySelector(".chip-label").textContent.trim();
-      handleQuestionClick(btn.dataset.qid, label, repo);
-    });
-  });
-}
-
-async function handleQuestionClick(questionId, label, repo) {
-  const cacheKey = `${repo.id}_${questionId}_${currentLang}`;
-
-  const chip = document.querySelector(`[data-qid="${questionId}"]`);
-  if (chip) {
-    chip.disabled = true;
-    chip.querySelector(".chip-label").textContent =
-      "⏳ " + label.replace(/^[^\s]+\s/, "");
-  }
-
-  const messages = document.getElementById("chatMessages");
-
-  // User bubble
-  messages.insertAdjacentHTML(
-    "beforeend",
-    `
-    <div class="flex justify-end">
-      <div class="bg-hn/10 border border-hn/20 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] text-sm text-textMain">${escapeHtml(label)}</div>
-    </div>`,
-  );
-
-  // Loading bubble
-  const loadId = `chat-load-${Date.now()}`;
-  messages.insertAdjacentHTML(
-    "beforeend",
-    `
-    <div id="${loadId}" class="flex justify-start">
-      <div class="bg-surface border border-borderSubtle rounded-2xl rounded-tl-sm px-4 py-3 text-textMuted text-sm flex items-center gap-2">
-        ${SPINNER_SVG}<span>Thinking…</span>
-      </div>
-    </div>`,
-  );
-  messages.lastElementChild.scrollIntoView({
-    behavior: "smooth",
-    block: "nearest",
-  });
-
-  // Check client cache first
-  if (answerCache.has(cacheKey)) {
-    document.getElementById(loadId)?.remove();
-    appendAnswer(messages, answerCache.get(cacheKey), true);
-    markChipAnswered(chip, label);
-    return;
-  }
-
-  try {
-    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
-    const headers = { "Content-Type": "application/json" };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-    // Always send the locally-rendered summary as fallback context.
-    // The worker's in-memory cache may have been cleared (Worker restarts are stateless).
-    const localSummary =
-      localStorage.getItem(`summary_${repo.id}_${currentLang}`) ||
-      localStorage.getItem(`summary_${repo.id}_en`) ||
-      "";
-
-    const res = await fetch(`/api/ask`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        repoId: repo.id,
-        questionId,
-        lang: currentLang,
-        summary: localSummary,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    document.getElementById(loadId)?.remove();
-
-    if (!res.ok) {
-      const def = ERROR_MAP[data.errorCode] ?? {
-        title: "Failed",
-        hint: data.error || "Unknown error.",
-      };
-      appendAnswer(messages, `**${def.title}** — ${def.hint}`, false, true);
-      // Re-enable chip so user can retry
-      if (chip) {
-        chip.disabled = false;
-        chip.querySelector(".chip-label").textContent = label;
-      }
-      if (
-        data.errorCode === "no_api_key" ||
-        data.errorCode === "invalid_api_key"
-      )
-        openSettingsBtn.click();
-      return;
-    }
-
-    answerCache.set(cacheKey, data.answer);
-    appendAnswer(messages, data.answer, data.isCached);
-    markChipAnswered(chip, label);
-  } catch (err) {
-    document.getElementById(loadId)?.remove();
-    appendAnswer(messages, `**Error** — ${err.message}`, false, true);
-    if (chip) {
-      chip.disabled = false;
-      chip.querySelector(".chip-label").textContent = label;
-    }
-  }
-}
-
-function markChipAnswered(chip, originalLabel) {
-  if (!chip) return;
-  const withoutEmoji = originalLabel.replace(/^[^\s]+\s/, "");
-  chip.querySelector(".chip-label").textContent = "✅ " + withoutEmoji;
-  chip.classList.add("is-answered");
-  chip.disabled = true;
-}
-
-function appendAnswer(container, markdown, isCached = false, isError = false) {
-  const div = document.createElement("div");
-  div.className = "flex justify-start";
-  div.innerHTML = `
-    <div class="bg-surface border ${isError ? "border-red-500/20" : "border-borderSubtle"} rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%] text-sm">
-      <div class="prose prose-invert prose-sm">${markdownToSafeHtml(markdown)}</div>
-      ${isCached ? `<p class="text-[10px] font-mono text-textMuted/50 mt-2 text-right">cached</p>` : ""}
-    </div>`;
-  container.appendChild(div);
-  // Scroll chips into view so they remain accessible at the bottom
-  const chips = document.getElementById("chatChips");
-  (chips ?? div).scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ─── WordCloud ───────────────────────────────────────────────────────────────────
@@ -1980,6 +2033,262 @@ function renderWordCloudInsights(data) {
     `;
     wordcloudTrends.innerHTML = trendsHtml;
   }
+
+  // Build a plain-text summary of the wordcloud data to use as AI context
+  _wordcloudContextText = _buildWordcloudContext(data);
+
+  // Show and init the chat section
+  initWordcloudChat();
+}
+
+// Wordcloud AI context summary (built after data loads)
+let _wordcloudContextText = "";
+
+function _buildWordcloudContext(data) {
+  const lines = [];
+  if (data.words?.length) {
+    lines.push(
+      "Top trending technologies: " +
+        data.words
+          .slice(0, 20)
+          .map((w) => w.text)
+          .join(", ") +
+        ".",
+    );
+  }
+  if (data.categories) {
+    const cats = Object.entries(data.categories)
+      .map(([k, v]) => `${k}: ${v.count || 0}`)
+      .join(", ");
+    lines.push("Categories breakdown — " + cats + ".");
+  }
+  if (data.insights?.length) {
+    lines.push("Key insights: " + data.insights.join(" "));
+  }
+  if (data.trends?.emerging?.length)
+    lines.push("Emerging: " + data.trends.emerging.join(", ") + ".");
+  if (data.trends?.rising?.length)
+    lines.push("Rising: " + data.trends.rising.join(", ") + ".");
+  if (data.trends?.established?.length)
+    lines.push("Established: " + data.trends.established.join(", ") + ".");
+  return lines.join("\n");
+}
+
+// ─── Wordcloud chat ───────────────────────────────────────────────────────────
+const WC_CHAT_QUESTIONS_EN = [
+  {
+    id: "wc_hottest",
+    label: "🔥 Hottest tech?",
+    question:
+      "What are the hottest technologies in this period's trending repos, and why are they dominating?",
+  },
+  {
+    id: "wc_learn",
+    label: "📚 What to learn next?",
+    question:
+      "Based on these trending technologies, what should a developer focus on learning to stay current?",
+  },
+  {
+    id: "wc_emerging",
+    label: "🚀 What's emerging?",
+    question:
+      "Which technologies or concepts are emerging and likely to become more important in the near future?",
+  },
+  {
+    id: "wc_common",
+    label: "🔗 Common patterns?",
+    question:
+      "What do these trending repositories have in common? What patterns or themes are shared across them?",
+  },
+];
+
+const WC_CHAT_QUESTIONS_VI = [
+  {
+    id: "wc_hottest",
+    label: "🔥 Công nghệ nổi bật?",
+    question:
+      "Công nghệ nào đang nổi bật nhất trong các repo trending kỳ này, và tại sao chúng chiếm ưu thế?",
+  },
+  {
+    id: "wc_learn",
+    label: "📚 Nên học gì tiếp theo?",
+    question:
+      "Dựa trên các công nghệ trending, lập trình viên nên tập trung học gì để theo kịp xu hướng?",
+  },
+  {
+    id: "wc_emerging",
+    label: "🚀 Xu hướng nổi lên?",
+    question:
+      "Công nghệ hoặc khái niệm nào đang nổi lên và có khả năng trở nên quan trọng hơn trong tương lai gần?",
+  },
+  {
+    id: "wc_common",
+    label: "🔗 Điểm chung là gì?",
+    question:
+      "Các repo trending này có điểm gì chung? Những mẫu hoặc chủ đề nào được chia sẻ giữa chúng?",
+  },
+];
+
+function initWordcloudChat() {
+  const chatEl = document.getElementById("wordcloudChat");
+  if (!chatEl) return;
+  chatEl.classList.remove("hidden");
+
+  const messagesEl = document.getElementById("wordcloudChatMessages");
+  const chipsEl = document.getElementById("wordcloudChatChips");
+  const inputEl = document.getElementById("wordcloudChatInput");
+  const sendBtn = document.getElementById("wordcloudChatSendBtn");
+
+  // Render chips once
+  const questions =
+    currentLang === "vi" ? WC_CHAT_QUESTIONS_VI : WC_CHAT_QUESTIONS_EN;
+  chipsEl.innerHTML = questions
+    .map(
+      (q) => `
+    <button data-wcqid="${q.id}"
+      class="wc-chat-chip px-2.5 py-1 rounded-full border border-borderSubtle bg-appBg text-[11px] text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
+      ${escapeHtml(q.label)}
+    </button>`,
+    )
+    .join("");
+
+  chipsEl.querySelectorAll(".wc-chat-chip").forEach((btn) => {
+    const q = questions.find((x) => x.id === btn.dataset.wcqid);
+    if (!q) return;
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      handleWordcloudChatAsk(q.question, btn, messagesEl);
+    });
+  });
+
+  const doSend = () => {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = "";
+    handleWordcloudChatAsk(text, null, messagesEl);
+  };
+  // Remove old listeners by replacing nodes
+  const newSend = sendBtn.cloneNode(true);
+  sendBtn.replaceWith(newSend);
+  newSend.addEventListener("click", doSend);
+  const newInput = inputEl.cloneNode(true);
+  inputEl.replaceWith(newInput);
+  newInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+}
+
+function handleWordcloudChatAsk(questionText, chipBtn, messagesEl) {
+  const cacheKey = `wc_${feedKind}_${questionText.slice(0, 80)}_${currentLang}`;
+
+  if (chipBtn) {
+    chipBtn.disabled = true;
+    chipBtn.textContent = "⏳ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
+  }
+
+  // User bubble
+  messagesEl.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-end">
+      <div class="max-w-[80%] bg-hn/10 border border-hn/20 rounded-xl rounded-tr-sm px-3 py-2 text-xs text-textMain">${escapeHtml(questionText)}</div>
+    </div>`,
+  );
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (answerCache.has(cacheKey)) {
+    _appendWcAnswer(messagesEl, answerCache.get(cacheKey));
+    if (chipBtn) {
+      chipBtn.textContent =
+        "✅ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
+      chipBtn.classList.add("is-answered");
+    }
+    return;
+  }
+
+  const loadId = `wc-load-${Date.now()}`;
+  messagesEl.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div id="${loadId}" class="flex justify-start">
+      <div class="bg-surface border border-borderSubtle rounded-xl rounded-tl-sm px-3 py-2 text-xs text-textMuted flex items-center gap-2">
+        ${SPINNER_SVG}<span>Thinking…</span>
+      </div>
+    </div>`,
+  );
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  fetch("/api/ask", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      repoId: `wordcloud_${feedKind}`,
+      question: questionText,
+      lang: currentLang,
+      summary: _wordcloudContextText,
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      document.getElementById(loadId)?.remove();
+      if (data.error) {
+        _appendWcError(messagesEl, data.error);
+        if (chipBtn) {
+          chipBtn.disabled = false;
+          chipBtn.textContent = chipBtn.textContent.replace(/^⏳\s/, "");
+        }
+        if (
+          data.errorCode === "no_api_key" ||
+          data.errorCode === "invalid_api_key"
+        )
+          openSettingsBtn.click();
+        return;
+      }
+      answerCache.set(cacheKey, data.answer);
+      _appendWcAnswer(messagesEl, data.answer, data.isCached);
+      if (chipBtn) {
+        chipBtn.textContent =
+          "✅ " + chipBtn.textContent.replace(/^[^\s]+\s/, "");
+        chipBtn.classList.add("is-answered");
+      }
+    })
+    .catch((err) => {
+      document.getElementById(loadId)?.remove();
+      _appendWcError(messagesEl, err.message);
+      if (chipBtn) chipBtn.disabled = false;
+    });
+}
+
+function _appendWcAnswer(container, answer, isCached = false) {
+  container.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-start">
+      <div class="max-w-[90%] bg-appBg border border-borderSubtle rounded-xl rounded-tl-sm px-3 py-2.5 text-xs">
+        <div class="prose prose-invert prose-sm max-w-none">${markdownToSafeHtml(answer)}</div>
+        ${isCached ? `<p class="text-[10px] font-mono text-textMuted/40 mt-1.5 text-right">cached</p>` : ""}
+      </div>
+    </div>`,
+  );
+  container.scrollTop = container.scrollHeight;
+}
+
+function _appendWcError(container, msg) {
+  container.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="flex justify-start">
+      <div class="max-w-[85%] bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 text-xs text-red-400">${escapeHtml(msg || "Something went wrong")}</div>
+    </div>`,
+  );
+  container.scrollTop = container.scrollHeight;
 }
 
 function handleWordCloudClick(word) {
@@ -1999,7 +2308,7 @@ function handleWordCloudClick(word) {
   allRepos = savedAll;
 
   wordcloudClearBtn.disabled = false;
-  
+
   // Keep WordCloud visible, just scroll to show the filtered results
   // The WordCloud remains in readerPane, repos are filtered in the sidebar
 }

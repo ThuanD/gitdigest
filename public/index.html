@@ -547,19 +547,19 @@
                       </button>
                     </div>
 
-                    <!-- Issues toggle — kbd fixed to C (was showing I but handler listens for C) -->
+                    <!-- Chat toggle -->
                     <div
                       id="readerCommentsToggleWrap"
                       class="hidden rounded-lg border border-borderSubtle bg-appBg p-0.5 shrink-0 inline-flex"
                     >
                       <button
-                        id="readerIssuesBtn"
+                        id="readerChatBtn"
                         type="button"
-                        title="Toggle issues (keyboard: C)"
+                        title="Toggle chat with AI (keyboard: C)"
                         class="feed-kind-btn px-2.5 py-1.5 text-[11px] font-mono rounded-md transition-colors inline-flex items-center justify-center gap-1.5"
                         aria-pressed="false"
                       >
-                        <span>Issues</span>
+                        <span>Chat with AI</span>
                         <kbd
                           class="pointer-events-none select-none rounded border border-borderSubtle/90 bg-appBg px-1 py-0.5 text-[9px] font-mono text-textMuted/55 leading-none"
                           >C</kbd
@@ -598,7 +598,7 @@
             </div>
           </div>
 
-          <!-- Issues sidebar -->
+          <!-- Chat sidebar -->
           <aside
             id="commentsPane"
             class="hidden flex-col bg-appBg border-borderSubtle z-40 min-h-0 md:z-10 md:w-[min(420px,38vw)] md:max-w-[480px] md:shrink-0 md:border-l max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-md max-md:border-l max-md:shadow-2xl"
@@ -608,37 +608,27 @@
             >
               <div class="flex items-center gap-2 min-w-0">
                 <span class="text-sm font-medium text-textMain tracking-tight"
-                  >Issues</span
+                  >Chat with AI</span
                 >
                 <kbd
                   class="pointer-events-none select-none shrink-0 rounded border border-borderSubtle/90 bg-appBg px-1.5 py-0.5 text-[10px] font-mono text-textMuted/55 leading-none"
-                  title="Toggle issues"
+                  title="Toggle chat"
                   >C</kbd
                 >
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <a
-                  id="commentsExternalLink"
-                  href="#"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-[11px] font-mono text-textMuted hover:text-hn uppercase tracking-wider"
-                  >Issues ↗</a
-                >
                 <button
                   id="closeCommentsBtn"
                   type="button"
                   class="w-8 h-8 rounded-lg border border-borderSubtle text-textMuted hover:text-textMain hover:border-borderHover flex items-center justify-center text-lg leading-none"
-                  aria-label="Close issues"
+                  aria-label="Close chat"
                 >
                   ×
                 </button>
               </div>
             </div>
-            <div
-              id="commentsBody"
-              class="flex-1 overflow-y-auto text-textMuted p-4"
-            ></div>
+            <div id="commentsBody" class="flex flex-col h-full text-textMuted p-4">
+            </div>
           </aside>
         </div>
       </div>
