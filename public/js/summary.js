@@ -1,4 +1,4 @@
-import { LS_API_KEY, SPINNER_SVG, ERROR_MAP } from "./constants.js";
+import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL, SPINNER_SVG, ERROR_MAP } from "./constants.js";
 import { state } from "./state.js";
 import { readerStatus, readerBody, openSettingsBtn } from "./dom.js";
 import { markdownToSafeHtml, applyBlankTargets } from "./utils.js";
@@ -63,12 +63,20 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
 
   try {
     const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+    const provider = localStorage.getItem(LS_AI_PROVIDER) || "openai";
+    const model = (localStorage.getItem(LS_AI_MODEL) || "").trim();
+    
     const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+    
+    // Build query parameters
+    const params = new URLSearchParams({
+      repoId: repo.id,
+      lang: state.currentLang,
+      ...(provider && { provider }),
+      ...(model && { model })
+    });
 
-    const res = await fetch(
-      `/api/summarize?repoId=${encodeURIComponent(repo.id)}&lang=${encodeURIComponent(state.currentLang)}`,
-      { headers },
-    );
+    const res = await fetch(`/api/summarize?${params}`, { headers });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {

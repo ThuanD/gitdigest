@@ -1,4 +1,4 @@
-import { LS_API_KEY } from "./constants.js";
+import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL } from "./constants.js";
 import { state } from "./state.js";
 import {
   wordcloudCanvas,
@@ -40,12 +40,20 @@ export async function loadWordCloud(feedKind, onCardClick) {
   document.getElementById("wordcloudPeriodLabel").textContent = feedKind;
 
   const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+  const provider = localStorage.getItem(LS_AI_PROVIDER) || "openai";
+  const model = (localStorage.getItem(LS_AI_MODEL) || "").trim();
   const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
   try {
-    const res = await fetch(`/api/wordcloud?period=${feedKind}&lang=`, {
-      headers,
+    // Build query parameters
+    const params = new URLSearchParams({
+      period: feedKind,
+      lang: state.currentLang,
+      ...(provider && { provider }),
+      ...(model && { model })
     });
+
+    const res = await fetch(`/api/wordcloud?${params}`, { headers });
     const data = await res.json();
 
     if (!res.ok || data.error) {

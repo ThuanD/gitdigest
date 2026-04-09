@@ -161,8 +161,10 @@ export async function handleSummarize(
       );
 
     const lang = (url.searchParams.get("lang") ?? "en").slice(0, 12);
+    const clientProvider = url.searchParams.get("provider");
+    const clientModel = url.searchParams.get("model");
     const apiKey =
-      resolveClientApiKey(request) || (env.OPENAI_API_KEY ?? "").trim();
+      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
     if (!apiKey) {
       return json(
         {
@@ -195,7 +197,16 @@ export async function handleSummarize(
     }
 
     // 3. Generate from scratch
-    const summary = await generateSummary(repoId, lang, apiKey, env);
+    // Create enhanced env with client preferences
+    const enhancedEnv = {
+      ...env,
+      ...(clientProvider === "openai" && clientModel && { OPENAI_MODEL: clientModel }),
+      ...(clientProvider === "groq" && clientModel && { GROQ_MODEL: clientModel }),
+      ...(clientProvider === "openrouter" && clientModel && { OPENROUTER_MODEL: clientModel }),
+      ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
+    };
+
+    const summary = await generateSummary(repoId, lang, apiKey, enhancedEnv);
     summaryCache.set(cacheKey, summary);
     return json({ summary, isGenerated: true });
   } catch (error) {
@@ -220,6 +231,8 @@ export async function handleAsk(
     let question: string | undefined;
     let lang: string;
     let clientSummary: string;
+    let clientProvider: string | undefined;
+    let clientModel: string | undefined;
 
     if (request.method === "POST") {
       const body = (await request.json().catch(() => ({}))) as Record<
@@ -229,6 +242,8 @@ export async function handleAsk(
       repoId = body.repoId;
       question = body.question;
       lang = (body.lang ?? "en").slice(0, 12);
+      clientProvider = body.provider;
+      clientModel = body.model;
       
       // Validate client summary if provided
       if (typeof body.summary === "string") {
@@ -296,7 +311,7 @@ export async function handleAsk(
     if (cached) return json({ answer: cached, isCached: true });
 
     const apiKey =
-      resolveClientApiKey(request) || (env.OPENAI_API_KEY ?? "").trim();
+      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
     if (!apiKey) {
       return json(
         { error: "No API key configured.", errorCode: "no_api_key" },
@@ -336,10 +351,20 @@ Target length: 180–320 words. Never pad the response.
 Repository Summary:
 ${summary}`;
 
+    // Create enhanced env with client preferences
+    const enhancedEnv = {
+      ...env,
+      ...(clientProvider === "openai" && clientModel && { OPENAI_MODEL: clientModel }),
+      ...(clientProvider === "groq" && clientModel && { GROQ_MODEL: clientModel }),
+      ...(clientProvider === "openrouter" && clientModel && { OPENROUTER_MODEL: clientModel }),
+      ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
+    };
+
     const answer = await callAI(
       systemPrompt,
       `Question: ${escapePrompt(cleanQuestion)}`,
       apiKey,
+      enhancedEnv,
     );
     askCache.set(cacheKey, answer);
     return json({ answer, isCached: false });
@@ -366,6 +391,8 @@ export async function handleWordCloud(
       | "weekly"
       | "monthly";
     const language = url.searchParams.get("lang") ?? "";
+    const clientProvider = url.searchParams.get("provider");
+    const clientModel = url.searchParams.get("model");
     const cacheKey = `${period}-${language}`;
 
     // 1. TTL cache hit
@@ -390,7 +417,7 @@ export async function handleWordCloud(
     // 3. Generate
     const repos = await fetchTrendingRepos(period, "", env);
     const apiKey =
-      resolveClientApiKey(request) || (env.OPENAI_API_KEY ?? "").trim();
+      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
 
     if (!apiKey) {
       const wordData = extractBasicKeywords(repos);
@@ -414,7 +441,16 @@ export async function handleWordCloud(
       period,
       language,
     );
-    const raw = await callAI(systemPrompt, userPrompt, apiKey);
+    // Create enhanced env with client preferences
+    const enhancedEnv = {
+      ...env,
+      ...(clientProvider === "openai" && clientModel && { OPENAI_MODEL: clientModel }),
+      ...(clientProvider === "groq" && clientModel && { GROQ_MODEL: clientModel }),
+      ...(clientProvider === "openrouter" && clientModel && { OPENROUTER_MODEL: clientModel }),
+      ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
+    };
+
+    const raw = await callAI(systemPrompt, userPrompt, apiKey, enhancedEnv);
 
     let wordData: WordCloudData;
     try {
@@ -465,7 +501,7 @@ async function generateSummary(
     lang,
     repo,
   );
-  return callAI(systemPrompt, userPrompt, apiKey);
+  return callAI(systemPrompt, userPrompt, apiKey, env);
 }
 
 async function translateText(
@@ -473,14 +509,14 @@ async function translateText(
   targetLang: string,
   env: Env,
 ): Promise<string | null> {
-  const apiKey = (env.OPENAI_API_KEY ?? "").trim();
+  const apiKey = (env.API_KEY ?? "").trim();
   if (!apiKey) return null;
   try {
     const { systemPrompt, userPrompt } = buildTranslationPrompt(
       text,
       targetLang,
     );
-    return await callAI(systemPrompt, userPrompt, apiKey);
+    return await callAI(systemPrompt, userPrompt, apiKey, env);
   } catch {
     return null;
   }
@@ -491,7 +527,7 @@ async function translateWordCloud(
   targetLang: string,
   env: Env,
 ): Promise<WordCloudData | null> {
-  const apiKey = (env.OPENAI_API_KEY ?? "").trim();
+  const apiKey = (env.API_KEY ?? "").trim();
   if (!apiKey) return null;
 
   try {
@@ -505,6 +541,7 @@ async function translateWordCloud(
       "You are a professional translator. Return only a JSON array of translated keywords.",
       prompt,
       apiKey,
+      env,
     );
 
     let translated: string[];

@@ -9,6 +9,9 @@ export const closeSettingsBtn = q("closeSettingsBtn");
 export const saveKeyBtn = q("saveKeyBtn");
 export const clearKeyBtn = q("clearKeyBtn");
 export const apiKeyInput = q("apiKeyInput");
+export const providerSelect = q("providerSelect");
+export const modelInput = q("modelInput");
+export const modelHint = q("modelHint");
 export const langSelect = q("langSelect");
 
 // ─── Status bar ───────────────────────────────────────────────────────────────

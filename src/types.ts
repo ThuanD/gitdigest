@@ -1,10 +1,16 @@
 // ─── Environment Bindings ────────────────────────────────────────────────────
 
 export interface Env {
-  OPENAI_API_KEY?: string;
+  API_KEY?: string;
   GITHUB_TOKEN?: string;
   ASSETS: { fetch: (req: Request) => Promise<Response> };
   RATE_LIMIT_KV?: KVNamespace;
+  
+  // AI Model Configuration
+  OPENAI_MODEL?: string;
+  GROQ_MODEL?: string;
+  OPENROUTER_MODEL?: string;
+  GEMINI_MODEL?: string;
 }
 
 // ─── Domain Models ───────────────────────────────────────────────────────────

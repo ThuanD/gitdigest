@@ -1,13 +1,29 @@
 # GitDigest
 
-A small web app that lists trending GitHub repositories and generates AI summaries (with optional translation) using AI APIs. The UI lives in `public/`; **Cloudflare Workers** (`worker.js`) serves those assets and implements `/api/*` via Wrangler — see [`wrangler.jsonc`](wrangler.jsonc).
+A modern web application that lists trending GitHub repositories and generates AI-powered summaries with multilingual support. Built with TypeScript, modular JavaScript, and enterprise-grade security features.
+
+**🚀 Live Demo:** https://gitdigest.td-rootx.workers.dev/
 
 ![gitdigest preview](preview.png)
+
+## Features
+
+- 📊 **Trending Repositories**: Daily, weekly, and monthly GitHub trending repos
+- 🤖 **AI Summaries**: Powered by OpenAI, Groq, OpenRouter, or Gemini
+- 🌍 **Multilingual**: English and Vietnamese support with automatic translation
+- 🔍 **Interactive Q&A**: Ask questions about repositories with AI assistance
+- ☁️ **Word Cloud**: Visual technology trend analysis
+- 🛡️ **Enterprise Security**: Rate limiting, input validation, and abuse prevention
+- 📱 **Responsive Design**: Modern UI with TailwindCSS
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18 or newer (for Wrangler)
-- An API key — either [OpenAI](https://platform.openai.com/) (starts with `sk-`), [Groq](https://console.groq.com/) (starts with `gsk_`), or [Gemini](https://makersuite.google.com/app/apikey) (starts with `AIza...`) — stored in the app settings (sent as `Authorization: Bearer …`) and/or as a Worker secret
+- API key from one of the supported providers:
+  - **OpenAI** (starts with `sk-`)
+  - **Groq** (starts with `gsk_`)
+  - **OpenRouter** (starts with `sk-or-`)
+  - **Gemini** (starts with `AIza...`)
 
 ## Setup
 
@@ -26,8 +42,14 @@ A small web app that lists trending GitHub repositories and generates AI summari
 3. (Optional) For local `npm run dev`, create `.dev.vars` in the project root (do not commit it):
 
    ```bash
-   OPENAI_API_KEY=sk-...  # or gsk_... for Groq, or AIza... for Gemini
-   GITHUB_TOKEN=ghp_...      # GitHub Personal Access Token
+   API_KEY=sk-...        # or gsk_... for Groq, sk-or-... for OpenRouter, or AIza... for Gemini
+   GITHUB_TOKEN=ghp_...          # GitHub Personal Access Token
+   
+   # Optional: Custom AI models (defaults shown)
+   OPENAI_MODEL=gpt-4o-mini
+   GROQ_MODEL=llama-3.3-70b-versatile
+   OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+   GEMINI_MODEL=gemini-2.0-flash-lite
    ```
 
    **Note**: `GITHUB_TOKEN` is **required** for production to avoid rate limits (60 requests/hour unauthenticated vs 5,000 requests/hour authenticated).
@@ -48,11 +70,17 @@ A small web app that lists trending GitHub repositories and generates AI summari
    # Scopes needed: public_repo (read-only access to public repositories)
    ```
 
-6. (Optional) Set a default API key on the deployed Worker so visitors can summarize without pasting a key:
+6. (Optional) Set default API keys and models on the deployed Worker:
 
    ```bash
-   npx wrangler secret put OPENAI_API_KEY
-   # Use OpenAI (sk-...), Groq (gsk_...), or Gemini (AIza...) key
+   # Default AI API key
+   npx wrangler secret put API_KEY
+   
+   # Optional: Custom AI models
+   npx wrangler secret put OPENAI_MODEL
+   npx wrangler secret put GROQ_MODEL
+   npx wrangler secret put OPENROUTER_MODEL
+   npx wrangler secret put GEMINI_MODEL
    ```
 
 7. Deploy:
@@ -63,12 +91,79 @@ A small web app that lists trending GitHub repositories and generates AI summari
 
 ## API
 
-Routes are implemented in `worker.js`:
+Routes are implemented in TypeScript (`src/handlers.ts`):
 
-- `GET /api/repos?page=1&period=daily&lang=javascript` — Paginated trending repositories from GitHub API (cached ~15 minutes in memory). Period: daily/weekly/monthly.
-- `GET /api/repo?id=<repoId>` — Fetches repository details and README content.
-- `GET /api/summarize?id=<repoId>&lang=<iso>` — Generates a cached AI summary of the repository; `lang` defaults to `en`. Send `Authorization: Bearer <API key>` (OpenAI `sk-...`, Groq `gsk_...`, or Gemini `AIza...`) and/or set the `OPENAI_API_KEY` secret / `.dev.vars`.
+### Repository Endpoints
+- `GET /api/repos?page=1&period=daily&lang=javascript` — Paginated trending repositories (cached 15 minutes)
+- `GET /api/repo?id=<repoId>` — Repository details and README content
+- `GET /api/summarize?id=<repoId>&lang=<iso>` — AI-powered repository summary
+- `POST /api/ask` — Interactive Q&A about repositories
+- `GET /api/wordcloud?period=daily&lang=en` — Technology trend word cloud
+
+### Admin Endpoints
+- `GET /admin/stats` — Cache statistics and system health
+- `POST /admin/clear` — Clear specific or all caches
+
+### Authentication
+Send `Authorization: Bearer <API key>` header or set `API_KEY` secret.
+
+### Rate Limiting
+- **Summarize**: 5 requests/hour per IP
+- **Ask**: 10 requests/hour per IP  
+- **WordCloud**: 20 requests/hour per IP
+
+## Architecture
+
+- **Frontend**: Modular JavaScript with ES modules (`public/js/`)
+- **Backend**: TypeScript with Cloudflare Workers (`src/`)
+- **Caching**: LRU and TTL cache implementations
+- **Security**: Input validation, rate limiting, and abuse prevention
+- **AI**: Multi-provider support with configurable models
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_KEY` | - | OpenAI API key |
+| `GITHUB_TOKEN` | - | GitHub Personal Access Token |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | OpenRouter model |
+| `GEMINI_MODEL` | `gemini-2.0-flash-lite` | Gemini model |
+| `RATE_LIMIT_KV` | - | KV namespace for rate limiting |
+
+### Cache Configuration
+
+- **Trending Lists**: 30 minutes TTL, 50 entries
+- **Summaries**: 500 entries max
+- **Repository Details**: 200 entries max
+- **Word Cloud**: 30 minutes TTL, 100 entries max
+- **Ask Q&A**: 1000 entries max
+
+## Security
+
+- ✅ **Input Validation**: Type checking and sanitization
+- ✅ **Rate Limiting**: IP-based with atomic operations
+- ✅ **Prompt Injection**: Escaped user input
+- ✅ **Cache Security**: Hash-based keys prevent collisions
+- ✅ **Abuse Prevention**: Pattern filtering and validation
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
 ## Licence
 
 This project is licensed under the MIT License — see [LICENCE.md](LICENCE.md).
+
+---
+
+**Built with ❤️ by [thuandz](https://github.com/thuandz)**
+
+**Deployed on Cloudflare Workers:** https://gitdigest.td-rootx.workers.dev/

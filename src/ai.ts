@@ -3,6 +3,7 @@ import type {
   AIProvider,
   GitHubRepo,
   TrendingRepo,
+  Env,
 } from "./types";
 import { AIApiError } from "./errors";
 
@@ -26,6 +27,7 @@ interface ProviderConfig {
 function buildProviderConfig(
   messages: AIMessage[],
   apiKey: string,
+  env?: Env,
 ): ProviderConfig {
   const provider = detectProvider(apiKey);
 
@@ -34,7 +36,7 @@ function buildProviderConfig(
       return {
         url: "https://api.groq.com/openai/v1/chat/completions",
         body: {
-          model: "llama-3.3-70b-versatile",
+          model: env?.GROQ_MODEL ?? "llama-3.3-70b-versatile",
           messages,
           temperature: 0.45,
           max_tokens: 4096,
@@ -45,7 +47,7 @@ function buildProviderConfig(
       return {
         url: "https://openrouter.ai/api/v1/chat/completions",
         body: {
-          model: "nvidia/nemotron-3-super-120b-a12b:free",
+          model: env?.OPENROUTER_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free",
           messages,
           temperature: 0.45,
           max_tokens: 4096,
@@ -56,7 +58,7 @@ function buildProviderConfig(
       return {
         url: "https://api.openai.com/v1/chat/completions",
         body: {
-          model: "gpt-4o-mini",
+          model: env?.OPENAI_MODEL ?? "gpt-4o-mini",
           messages,
           temperature: 0.45,
           max_tokens: 4096,
@@ -68,8 +70,9 @@ function buildProviderConfig(
         messages.find((m) => m.role === "system")?.content ?? "",
         messages.find((m) => m.role === "user")?.content ?? "",
       ];
+      const geminiModel = env?.GEMINI_MODEL ?? "gemini-2.0-flash-lite";
       return {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
         body: {
           contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
           generationConfig: { temperature: 0.45, maxOutputTokens: 4096 },
@@ -94,14 +97,15 @@ export async function callAI(
   systemPrompt: string,
   userPrompt: string,
   apiKey: string,
+  env?: Env,
 ): Promise<string> {
   const messages: AIMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ];
 
+  const config = buildProviderConfig(messages, apiKey, env);
   const provider = detectProvider(apiKey);
-  const config = buildProviderConfig(messages, apiKey);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

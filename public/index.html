@@ -627,14 +627,14 @@
                 </button>
               </div>
             </div>
-            <div id="commentsBody" class="flex flex-col h-full text-textMuted p-4">
+            <div id="commentsBody" class="flex flex-col h-full text-textMuted p-4 overflow-hidden">
             </div>
           </aside>
         </div>
       </div>
     </main>
 
-    <!-- ── Settings modal ─────────────────────────────────────────────────────── -->
+    <!-- ── Settings modal ───────────────────────────────────────────────────────<!-- Settings modal -->
     <dialog
       id="settingsModal"
       aria-labelledby="settingsModalTitle"
@@ -649,26 +649,66 @@
         &times;
       </button>
       <h2 id="settingsModalTitle" class="text-xl font-medium text-white mb-2">
-        API key
+        AI Configuration
       </h2>
       <p class="text-sm text-textMuted mb-6">
-        Your API key is saved in this browser only. It is sent to this app's
-        server in the Authorization header when you request a summary.
+        Configure your AI provider and model. Settings are saved locally in this browser only.
       </p>
-      <input
-        type="password"
-        id="apiKeyInput"
-        placeholder="sk- / gsk_ / AIza..."
-        autocomplete="off"
-        class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn mb-6 font-mono"
-      />
+      
+      <!-- Provider Selection -->
+      <div class="mb-4">
+        <label for="providerSelect" class="block text-sm font-medium text-white mb-2">
+          AI Provider
+        </label>
+        <select
+          id="providerSelect"
+          class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn mb-4"
+        >
+          <option value="openai">OpenAI</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </div>
+      
+      <!-- Model Input -->
+      <div class="mb-4">
+        <label for="modelInput" class="block text-sm font-medium text-white mb-2">
+          Model
+        </label>
+        <input
+          type="text"
+          id="modelInput"
+          placeholder="e.g., gpt-4o-mini, llama-3.3-70b-versatile"
+          autocomplete="off"
+          class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn mb-4 font-mono"
+        />
+        <div id="modelHint" class="text-xs text-textMuted mb-4">
+          Leave empty to use default model for selected provider
+        </div>
+      </div>
+      
+      <!-- API Key Input -->
+      <div class="mb-6">
+        <label for="apiKeyInput" class="block text-sm font-medium text-white mb-2">
+          API Key
+        </label>
+        <input
+          type="password"
+          id="apiKeyInput"
+          placeholder="sk- / gsk_ / sk-or- / AIza..."
+          autocomplete="off"
+          class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn font-mono"
+        />
+      </div>
+      
       <div class="flex justify-end gap-3">
         <button
           id="clearKeyBtn"
           type="button"
           class="px-4 py-2 rounded-lg text-sm text-textMuted hover:text-white transition-colors"
         >
-          Clear
+          Clear All
         </button>
         <button
           id="saveKeyBtn"

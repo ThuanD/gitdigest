@@ -1,4 +1,4 @@
-import { LS_API_KEY, SUPPORTED_LANGUAGES } from "./constants.js";
+import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL, SUPPORTED_LANGUAGES } from "./constants.js";
 import { state, setLang, setFeedKindState } from "./state.js";
 import * as dom from "./dom.js";
 import { renderActivityGraph } from "./storage.js";
@@ -23,13 +23,31 @@ import {
 
 // ─── Settings modal ───────────────────────────────────────────────────────────
 dom.openSettingsBtn.addEventListener("click", () => {
+  // Load saved values
   dom.apiKeyInput.value = localStorage.getItem(LS_API_KEY) || "";
+  dom.providerSelect.value = localStorage.getItem(LS_AI_PROVIDER) || "openai";
+  dom.modelInput.value = localStorage.getItem(LS_AI_MODEL) || "";
+  updateModelHint();
   dom.settingsModal.showModal();
 });
+
 dom.closeSettingsBtn.addEventListener("click", () => dom.settingsModal.close());
+
+// Provider change handler
+dom.providerSelect.addEventListener("change", () => {
+  updateModelHint();
+});
+
+// Model input handler
+dom.modelInput.addEventListener("input", () => {
+  updateModelHint();
+});
+
 dom.saveKeyBtn.addEventListener("click", () => {
   if (dom.apiKeyInput.value.trim()) {
     localStorage.setItem(LS_API_KEY, dom.apiKeyInput.value.trim());
+    localStorage.setItem(LS_AI_PROVIDER, dom.providerSelect.value);
+    localStorage.setItem(LS_AI_MODEL, dom.modelInput.value.trim());
     dom.settingsModal.close();
     if (state.currentActiveRepo)
       handleCardClick(
@@ -38,10 +56,39 @@ dom.saveKeyBtn.addEventListener("click", () => {
       );
   }
 });
+
 dom.clearKeyBtn.addEventListener("click", () => {
   localStorage.removeItem(LS_API_KEY);
+  localStorage.removeItem(LS_AI_PROVIDER);
+  localStorage.removeItem(LS_AI_MODEL);
   dom.apiKeyInput.value = "";
+  dom.providerSelect.value = "openai";
+  dom.modelInput.value = "";
+  updateModelHint();
 });
+
+// Update model hint based on provider
+function updateModelHint() {
+  const provider = dom.providerSelect.value;
+  const customModel = dom.modelInput.value.trim();
+  
+  const defaultModels = {
+    openai: "gpt-4o-mini",
+    groq: "llama-3.3-70b-versatile",
+    openrouter: "nvidia/nemotron-3-super-120b-a12b:free",
+    gemini: "gemini-2.0-flash-lite"
+  };
+  
+  const defaultModel = defaultModels[provider];
+  
+  if (customModel) {
+    dom.modelHint.textContent = `Using custom model: ${customModel}`;
+    dom.modelHint.className = "text-xs text-hn mb-4";
+  } else {
+    dom.modelHint.textContent = `Default model: ${defaultModel}`;
+    dom.modelHint.className = "text-xs text-textMuted mb-4";
+  }
+}
 
 // ─── Language selector ────────────────────────────────────────────────────────
 SUPPORTED_LANGUAGES.forEach(({ code, name }) => {

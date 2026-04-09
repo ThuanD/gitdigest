@@ -3,8 +3,8 @@ import { safeJsonParse } from "./utils.js";
 import { activityGraph } from "./dom.js";
 
 // ─── Preference keys ──────────────────────────────────────────────────────────
-const COMMENTS_OPEN_KEY = "github_trending_digest_comments_open_v1";
-const SOURCE_OPEN_KEY = "github_trending_digest_source_open_v1";
+const COMMENTS_OPEN_KEY = "gitdigest_comments_open_v1";
+const SOURCE_OPEN_KEY = "gitdigest_source_open_v1";
 
 export const getCommentsOpenPref = () =>
   localStorage.getItem(COMMENTS_OPEN_KEY) === "1";
