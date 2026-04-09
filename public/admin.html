@@ -137,7 +137,7 @@
     <script>
       class CacheAdmin {
         constructor() {
-          this.cacheTypes = ['listIdCaches', 'summaryCache', 'repoCache', 'wordcloudCache'];
+          this.cacheTypes = ['listIdCaches', 'summaryCache', 'repoCache', 'wordcloudCache', 'askCache'];
           this.init();
         }
 
@@ -252,7 +252,8 @@
             listIdCaches: 'Trending Lists',
             summaryCache: 'AI Summaries',
             repoCache: 'Repository Details',
-            wordcloudCache: 'Word Cloud Analysis'
+            wordcloudCache: 'Word Cloud Analysis',
+            askCache: 'AI Questions'
           };
           return names[type] || type;
         }
@@ -262,7 +263,8 @@
             listIdCaches: 'GitHub trending repository lists with 30-minute TTL',
             summaryCache: 'AI-generated repository summaries (max 500 entries)',
             repoCache: 'Repository metadata and README content (max 200 entries)',
-            wordcloudCache: 'Trending technology analysis (30-minute TTL, max 100 entries)'
+            wordcloudCache: 'Trending technology analysis (30-minute TTL, max 100 entries)',
+            askCache: 'AI questions and answers (30-minute TTL, max 100 entries)'
           };
           return descriptions[type] || '';
         }
