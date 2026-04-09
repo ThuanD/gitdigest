@@ -3,9 +3,10 @@ import { LRUCache, TTLCache } from "./cache";
 import {
   json,
   resolveClientApiKey,
-  safeParseJson,
   errorResponse,
+  safeParseJson,
 } from "./http";
+import { generateCacheKey, getClientIP, escapePrompt } from "./utils";
 import {
   fetchGitHubRepo,
   fetchTrendingRepos,
@@ -86,6 +87,59 @@ export async function handleRepoDetails(
   }
 }
 
+// ─── Rate Limiting Helper ───────────────────────────────────────────────────
+
+async function checkRateLimit(
+  env: Env,
+  request: Request,
+  endpoint: string,
+  maxRequests: number = 10,
+  windowSeconds: number = 3600
+): Promise<{ allowed: boolean; error?: Response }> {
+  if (!env.RATE_LIMIT_KV) return { allowed: true };
+
+  const clientIP = getClientIP(request);
+  const rateLimitKey = `${endpoint}_${clientIP}`;
+  
+  try {
+    // Use atomic operation with list to prevent race conditions
+    const list = await env.RATE_LIMIT_KV.list({ 
+      prefix: rateLimitKey,
+      limit: maxRequests + 1 // Only fetch needed keys
+    });
+    
+    // Count keys that actually match our pattern (endpoint_IP_timestamp_random)
+    const currentUsage = list.keys.filter(k => 
+      k.name.startsWith(rateLimitKey) && 
+      k.name !== rateLimitKey // Exclude: base key if it exists
+    ).length;
+
+    if (currentUsage >= maxRequests) {
+      return {
+        allowed: false,
+        error: json(
+          { error: `Rate limit exceeded (${maxRequests} requests per ${windowSeconds/3600}h)`, errorCode: "rate_limit" },
+          429
+        )
+      };
+    }
+
+    // Add unique entry with timestamp for atomic increment
+    const uniqueKey = `${rateLimitKey}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    await env.RATE_LIMIT_KV.put(
+      uniqueKey,
+      '1',
+      { expirationTtl: windowSeconds }
+    );
+
+    return { allowed: true };
+  } catch (error) {
+    // If KV fails, allow the request but log error
+    console.error('Rate limit check failed:', error);
+    return { allowed: true };
+  }
+}
+
 // ─── /api/summarize ───────────────────────────────────────────────────────────
 
 export async function handleSummarize(
@@ -94,6 +148,11 @@ export async function handleSummarize(
   env: Env,
 ): Promise<Response> {
   try {
+    // Rate limiting check
+    const rateLimit = await checkRateLimit(env, request, 'summarize', 5, 3600);
+    if (!rateLimit.allowed && rateLimit.error) {
+      return rateLimit.error;
+    }
     const repoId = url.searchParams.get("repoId");
     if (!repoId)
       return json(
@@ -152,6 +211,11 @@ export async function handleAsk(
   env: Env,
 ): Promise<Response> {
   try {
+    // Rate limiting check
+    const rateLimit = await checkRateLimit(env, request, 'ask', 10, 3600);
+    if (!rateLimit.allowed && rateLimit.error) {
+      return rateLimit.error;
+    }
     let repoId: string | undefined;
     let question: string | undefined;
     let lang: string;
@@ -165,8 +229,17 @@ export async function handleAsk(
       repoId = body.repoId;
       question = body.question;
       lang = (body.lang ?? "en").slice(0, 12);
-      clientSummary =
-        typeof body.summary === "string" ? body.summary.slice(0, 24_000) : "";
+      
+      // Validate client summary if provided
+      if (typeof body.summary === "string") {
+        const summary = body.summary.trim();
+        if (summary.length < 100 || summary.length > 24000) {
+          return json({ error: "Invalid summary length (100-24000 characters)", errorCode: "bad_request" }, 400);
+        }
+        clientSummary = summary;
+      } else {
+        clientSummary = "";
+      }
     } else {
       repoId = url.searchParams.get("repoId") ?? undefined;
       question = url.searchParams.get("question") ?? undefined;
@@ -179,8 +252,46 @@ export async function handleAsk(
     if (!question)
       return json({ error: "Missing question", errorCode: "bad_request" }, 400);
 
-    const questionKey = question.slice(0, 100).replace(/[^a-zA-Z0-9]/g, "_");
-    const cacheKey = `ask_${repoId}_${questionKey}_${lang}`;
+    // Validate repository ID format
+    if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repoId)) {
+      return json({ error: "Invalid repoId format", errorCode: "bad_request" }, 400);
+    }
+
+    // Check if repository exists in cache or has valid summary
+    const repoExists = repoCache.has(repoId) || 
+                      summaryCache.has(`${repoId}_${lang}`) || 
+                      summaryCache.has(`${repoId}_en`) ||
+                      (typeof clientSummary === "string" && clientSummary.length > 0);
+    
+    if (!repoExists) {
+      return json({ error: "Repository not found or no summary available", errorCode: "not_found" }, 404);
+    }
+
+    // Question validation and filtering
+    const cleanQuestion = question.trim().slice(0, 300);
+    if (cleanQuestion.length < 10) {
+      return json({ error: "Question too short (min 10 characters)", errorCode: "bad_request" }, 400);
+    }
+
+    // Block common abuse patterns
+    const blockedPatterns = [
+      /ignore.*summary/i,
+      /forget.*previous/i,
+      /act.*different/i,
+      /system.*prompt/i,
+      /<script|javascript:|data:/i,
+      /hack|exploit|bypass/i
+    ];
+
+    if (blockedPatterns.some(pattern => pattern.test(cleanQuestion))) {
+      return json({ error: "Invalid question content", errorCode: "forbidden" }, 403);
+    }
+
+    const cacheKey = generateCacheKey('ask', {
+      repo: repoId,
+      question: cleanQuestion,
+      lang: lang
+    });
     const cached = askCache.get(cacheKey);
     if (cached) return json({ answer: cached, isCached: true });
 
@@ -209,15 +320,25 @@ export async function handleAsk(
       );
     }
 
-    const systemPrompt = `You are a sharp, opinionated technical analyst reviewing GitHub repositories for senior developers.
+    // Enhanced system prompt with repo context enforcement
+    const systemPrompt = `You are a technical analyst for THIS SPECIFIC repository only.
+CRITICAL: Only answer questions about the repository described in the summary below.
+If the question is unrelated to this repository, respond: "I can only answer questions about this repository."
+
+Repository: ${repoId}
+Language: ${lang}
+
 Answer in the language matching ISO code: '${lang}'.
 Be specific, concrete, and data-driven — cite signals from the summary when possible.
 Use markdown formatting (bold key terms, short bullet lists only for distinct items).
-Target length: 180–320 words. Never pad the response.`;
+Target length: 180–320 words. Never pad the response.
+
+Repository Summary:
+${summary}`;
 
     const answer = await callAI(
       systemPrompt,
-      `Repository summary:\n${summary}\n\nQuestion: ${question}`,
+      `Question: ${escapePrompt(cleanQuestion)}`,
       apiKey,
     );
     askCache.set(cacheKey, answer);
@@ -235,6 +356,11 @@ export async function handleWordCloud(
   env: Env,
 ): Promise<Response> {
   try {
+    // Rate limiting check
+    const rateLimit = await checkRateLimit(env, request, 'wordcloud', 20, 3600);
+    if (!rateLimit.allowed && rateLimit.error) {
+      return rateLimit.error;
+    }
     const period = (url.searchParams.get("period") ?? "daily") as
       | "daily"
       | "weekly"

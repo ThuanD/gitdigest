@@ -4,6 +4,7 @@ export interface Env {
   OPENAI_API_KEY?: string;
   GITHUB_TOKEN?: string;
   ASSETS: { fetch: (req: Request) => Promise<Response> };
+  RATE_LIMIT_KV?: KVNamespace;
 }
 
 // ─── Domain Models ───────────────────────────────────────────────────────────
