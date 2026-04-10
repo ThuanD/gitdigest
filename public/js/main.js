@@ -364,6 +364,18 @@ document.addEventListener("keydown", (e) => {
       /* ignore */
     }
   }
+  
+  // Wordcloud period toggle
+  if (!dom.wordcloudView.classList.contains("hidden")) {
+    const key = e.key.toLowerCase();
+    if ((key === "d" || key === "w" || key === "m") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      const buttonId = `wordcloudPeriod${key === "d" ? "Daily" : key === "w" ? "Weekly" : "Monthly"}`;
+      const button = document.getElementById(buttonId);
+      if (button) button.click();
+      return;
+    }
+  }
 });
 
 // ─── Card click / reader ──────────────────────────────────────────────────────
