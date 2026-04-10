@@ -7,6 +7,7 @@ export const LS_API_KEY = "api_key";
 export const LS_AI_PROVIDER = "ai_provider";
 export const LS_AI_MODEL = "ai_model";
 export const LS_CHAT_HISTORY = "chat_history";
+export const LS_WORDCLOUD_CACHE = "wordcloud_cache";
 
 export const SUPPORTED_LANGUAGES = [
   { code: "en", name: "ENG" },

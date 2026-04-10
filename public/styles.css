@@ -212,13 +212,6 @@ dialog::backdrop {
   text-underline-offset: 2px;
 }
 
-.reader-post-slot {
-  width: 100%;
-  max-width: 42rem;
-  margin-left: auto;
-  margin-right: auto;
-}
-
 /* ── README source panel ─────────────────────────────────────────────────── */
 .reader-source-panel {
   border: 1px solid #27272a;

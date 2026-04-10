@@ -560,18 +560,29 @@ export function loadChatContent(repo, container) {
 }
 
 // ─── Wordcloud chat ───────────────────────────────────────────────────────────
+// Called each time wordcloud data loads (period may change).
+// Re-renders chip list and re-wires input handlers; messages persist in DOM
+// until the user navigates away or clears.
 
 export function initWordcloudChat(feedKind, wordcloudContextText) {
-  const chatEl = document.getElementById("wordcloudChat");
-  if (!chatEl) return;
-  chatEl.classList.remove("hidden");
-
   const messagesEl = document.getElementById("wordcloudChatMessages");
   const chipsEl = document.getElementById("wordcloudChatChips");
+  const sendBtn = document.getElementById("wordcloudChatSendBtn");
+  const inputEl = document.getElementById("wordcloudChatInput");
+
+  if (!messagesEl || !chipsEl || !sendBtn || !inputEl) return;
+
+  // Clean up existing event listeners to prevent memory leaks
+  cleanupWordcloudChatEvents();
+
+  // Clear previous chips and messages when period changes
+  chipsEl.innerHTML = "";
+  messagesEl.innerHTML = "";
 
   const questions =
     state.currentLang === "vi" ? WC_CHAT_QUESTIONS_VI : WC_CHAT_QUESTIONS_EN;
 
+  // Render chip buttons
   chipsEl.innerHTML = questions
     .map(
       (q) =>
@@ -587,7 +598,6 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
 
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
-
       handleAsk({
         questionText: q.question,
         cacheKey: `wc_${feedKind}_${safeEncode(q.question)}_${state.currentLang}`,
@@ -596,37 +606,30 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
           question: q.question,
           lang: state.currentLang,
           summary: wordcloudContextText,
-          type: 'chip',
+          type: "chip",
         },
         chipBtn: btn,
         messagesEl,
         bgClass: "bg-appBg",
-        // wordcloud chat does not persist history (no repoId / questionId)
       });
     });
   });
 
-  // Replace input/send to avoid duplicate listeners
-  const oldSend = document.getElementById("wordcloudChatSendBtn");
-  const oldInput = document.getElementById("wordcloudChatInput");
-  const newSend = oldSend.cloneNode(true);
-  const newInput = oldInput.cloneNode(true);
-  oldSend.replaceWith(newSend);
-  oldInput.replaceWith(newInput);
+  // Re-wire send button and input (clone to drop any previous listeners)
+  const newSend = sendBtn.cloneNode(true);
+  const newInput = inputEl.cloneNode(true);
+  sendBtn.replaceWith(newSend);
+  inputEl.replaceWith(newInput);
 
   const doSend = () => {
     const text = newInput.value.trim();
     if (!text) return;
-    
-    // Validate input before sending
     const validation = validateChatInput(text);
     if (!validation.isValid) {
       renderErrorBubble(messagesEl, validation.error);
       return;
     }
-    
     newInput.value = "";
-
     handleAsk({
       questionText: text,
       cacheKey: `wc_${feedKind}_${safeEncode(text)}_${state.currentLang}`,
@@ -635,7 +638,7 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
         question: text,
         lang: state.currentLang,
         summary: wordcloudContextText,
-        type: 'manual',
+        type: "manual",
       },
       chipBtn: null,
       messagesEl,
@@ -650,4 +653,36 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
       doSend();
     }
   });
+}
+
+// Store event cleanup functions
+let wordcloudChatCleanup = null;
+
+// Cleanup function to remove event listeners and prevent memory leaks
+function cleanupWordcloudChatEvents() {
+  if (wordcloudChatCleanup) {
+    wordcloudChatCleanup();
+    wordcloudChatCleanup = null;
+  }
+  
+  // Remove all event listeners from chip buttons
+  const chips = document.querySelectorAll(".wc-chat-chip");
+  chips.forEach(chip => {
+    const newChip = chip.cloneNode(true);
+    chip.parentNode.replaceChild(newChip, chip);
+  });
+  
+  // Remove event listeners from send button and input
+  const sendBtn = document.getElementById("wordcloudChatSendBtn");
+  const inputEl = document.getElementById("wordcloudChatInput");
+  
+  if (sendBtn) {
+    const newSendBtn = sendBtn.cloneNode(true);
+    sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
+  }
+  
+  if (inputEl) {
+    const newInputEl = inputEl.cloneNode(true);
+    inputEl.parentNode.replaceChild(newInputEl, inputEl);
+  }
 }

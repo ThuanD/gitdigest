@@ -13,6 +13,7 @@ import {
   loadWordCloud,
   showWordCloudView,
   hideWordCloudView,
+  toggleWordcloudChat,
 } from "./wordcloud.js";
 import {
   getSourceOpenPref,
@@ -272,7 +273,6 @@ dom.wordcloudClearBtn.addEventListener("click", () => {
   dom.statusTextEl.textContent = "Live";
   dom.wordcloudClearBtn.disabled = true;
 });
-dom.closeWordcloudBtn.addEventListener("click", () => hideWordCloudView());
 
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
 function keyboardInFormField() {
@@ -332,6 +332,13 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key.toLowerCase() === "c" && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
+    
+    // Handle wordcloud chat toggle
+    if (!dom.wordcloudView.classList.contains("hidden")) {
+      toggleWordcloudChat();
+      return;
+    }
+    
     if (!state.currentActiveRepo) return;
     dom.commentsPane.classList.contains("hidden")
       ? openCommentsPanelLocal(state.currentActiveRepo, true)

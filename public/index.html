@@ -7,18 +7,33 @@
       name="description"
       content="GitDigest - GitHub trending repositories with AI summaries and detailed README analysis. Discover trending projects, get AI-powered insights, and explore developer tools."
     />
-    <meta name="keywords" content="GitHub, trending, repositories, AI, summary, developer, open source, programming, tools" />
+    <meta
+      name="keywords"
+      content="GitHub, trending, repositories, AI, summary, developer, open source, programming, tools"
+    />
     <meta name="author" content="ThuanD" />
     <meta property="og:title" content="GitDigest - GitHub Trending with AI" />
-    <meta property="og:description" content="Discover trending GitHub repositories with AI-powered summaries and insights" />
+    <meta
+      property="og:description"
+      content="Discover trending GitHub repositories with AI-powered summaries and insights"
+    />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://gitdigest.td-rootx.workers.dev" />
-    <meta property="og:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta
+      property="og:image"
+      content="https://gitdigest.td-rootx.workers.dev/preview.png"
+    />
     <meta property="og:site_name" content="GitDigest" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="GitDigest - GitHub Trending with AI" />
-    <meta name="twitter:description" content="Discover trending GitHub repositories with AI-powered summaries and insights" />
-    <meta name="twitter:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta
+      name="twitter:description"
+      content="Discover trending GitHub repositories with AI-powered summaries and insights"
+    />
+    <meta
+      name="twitter:image"
+      content="https://gitdigest.td-rootx.workers.dev/preview.png"
+    />
     <meta name="twitter:creator" content="@thuandv" />
     <link rel="canonical" href="https://gitdigest.td-rootx.workers.dev" />
     <title>GitDigest - GitHub Trending with AI</title>
@@ -328,98 +343,252 @@
       class="flex-1 h-full bg-surface relative hidden md:flex flex-col overflow-hidden"
     >
       <!-- WordCloud View -->
-      <div id="wordcloudView" class="hidden flex-1 flex-col overflow-hidden">
-        <div class="flex items-center justify-between p-6 border-b border-borderSubtle">
-          <h2 class="text-xl font-semibold text-textMain">
-            Trending Technologies
-          </h2>
-          <button
-            id="closeWordcloudBtn"
-            type="button"
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-textMuted hover:text-white hover:bg-surfaceHover transition-colors"
+      <div
+        id="wordcloudView"
+        class="hidden flex flex-1 min-h-0 min-w-0 flex-col"
+      >
+        <div
+          id="wordcloudSplit"
+          class="flex flex-1 min-h-0 min-w-0 flex-col md:flex-row"
+        >
+          <!-- Main wordcloud area -->
+          <div
+            id="wordcloudContent"
+            class="flex-1 min-w-0 min-h-0 flex-col overflow-y-auto w-full relative"
           >
-            <svg
-              class="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-
-        <div class="p-6 flex-1 overflow-y-auto">
-          <!-- Period Selector -->
-          <div class="flex items-center justify-between mb-6">
-            <span
-              class="text-xs text-textMuted font-mono uppercase tracking-wider"
-              id="wordcloudPeriodLabel"
-            ></span>
             <div
-              id="wordcloudStatus"
-              class="text-xs text-textMuted font-mono"
-            ></div>
-          </div>
-
-          <!-- WordCloud Container -->
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- WordCloud Canvas -->
-            <div class="lg:col-span-2">
-              <div
-                class="bg-appBg border border-borderSubtle rounded-xl p-4 min-h-[400px] flex items-center justify-center"
-              >
-                <canvas
-                  id="wordcloudCanvas"
-                  width="600"
-                  height="400"
-                  class="w-full h-full"
-                ></canvas>
-                <div
-                  id="wordcloudLoading"
-                  class="hidden flex-col items-center justify-center"
+              class="sticky top-0 z-20 bg-surface/95 backdrop-blur-xl border-b border-borderSubtle shadow-sm flex flex-col shrink-0"
+            >
+              <div class="md:hidden p-4 border-b border-borderSubtle">
+                <button
+                  id="wordcloudMobileBackBtn"
+                  type="button"
+                  class="text-sm text-textMuted hover:text-textMain flex items-center gap-2"
                 >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 19l-7-7 7-7"
+                    ></path>
+                  </svg>
+                  Back to Feed
+                </button>
+              </div>
+
+              <div
+                class="px-6 py-8 md:py-10 md:px-10 lg:px-16 flex flex-col items-center"
+              >
+                <div class="w-full max-w-2xl min-w-0 text-left">
+                  <h2 class="reader-title-source-link">
+                    Trending Technologies
+                  </h2>
+
                   <div
-                    class="animate-spin w-8 h-8 border-2 border-hn border-t-transparent rounded-full mb-4"
-                  ></div>
-                  <span class="text-sm text-textMuted">Analyzing trends...</span>
+                    class="flex flex-wrap items-center justify-between gap-3 md:gap-4 mt-5"
+                  >
+                    <div
+                      id="wordcloudStatus"
+                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm"
+                    >
+                      Loading…
+                    </div>
+
+                    <!-- Period toggle -->
+                    <div
+                      class="flex items-center gap-2 shrink-0"
+                      role="group"
+                      aria-label="Trending period"
+                    >
+                      <div
+                        class="flex rounded-lg border border-borderSubtle bg-appBg p-0.5 gap-0.5"
+                      >
+                        <button
+                          id="wordcloudPeriodDaily"
+                          type="button"
+                          class="feed-kind-btn px-2.5 py-1.5 text-[11px] font-mono rounded-md transition-colors"
+                          aria-pressed="true"
+                        >
+                          Daily
+                        </button>
+                        <button
+                          id="wordcloudPeriodWeekly"
+                          type="button"
+                          class="feed-kind-btn px-2.5 py-1.5 text-[11px] font-mono rounded-md transition-colors"
+                          aria-pressed="false"
+                        >
+                          Weekly
+                        </button>
+                        <button
+                          id="wordcloudPeriodMonthly"
+                          type="button"
+                          class="feed-kind-btn px-2.5 py-1.5 text-[11px] font-mono rounded-md transition-colors"
+                          aria-pressed="false"
+                        >
+                          Monthly
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Chat toggle -->
+                    <div
+                      id="wordcloudChatToggleWrap"
+                      class="rounded-lg border border-borderSubtle bg-appBg p-0.5 shrink-0 inline-flex"
+                    >
+                      <button
+                        id="wordcloudChatBtn"
+                        type="button"
+                        title="Toggle chat with AI (keyboard: C)"
+                        class="feed-kind-btn px-2.5 py-1.5 text-[11px] font-mono rounded-md transition-colors inline-flex items-center justify-center gap-1.5"
+                        aria-pressed="false"
+                      >
+                        <span>Chat with AI</span>
+                        <kbd
+                          class="pointer-events-none select-none rounded border border-borderSubtle/90 bg-appBg px-1 py-0.5 text-[9px] font-mono text-textMuted/55 leading-none"
+                          >C</kbd
+                        >
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- Insights Panel -->
-            <div class="space-y-4">
-              <!-- Categories -->
-              <div class="bg-appBg border border-borderSubtle rounded-xl p-4">
-                <h3 class="text-sm font-medium text-textMain mb-3">Categories</h3>
-                <div id="wordcloudCategories" class="space-y-2"></div>
-              </div>
+            <div
+              class="px-6 md:px-10 lg:px-16 pb-28 md:pb-32 flex flex-col items-center w-full"
+            >
+              <div class="reader-post-slot max-w-3xl mx-auto mt-8 md:mt-10 w-full">
+                <div class="w-full animate-reader-in">
+                  <!-- Canvas -->
+                  <div
+                    class="bg-appBg border border-borderSubtle rounded-xl p-4 min-h-[380px] flex items-center justify-center"
+                  >
+                    <canvas
+                      id="wordcloudCanvas"
+                      width="600"
+                      height="400"
+                      class="w-full h-full"
+                    ></canvas>
+                    <div
+                      id="wordcloudLoading"
+                      class="hidden flex-col items-center justify-center"
+                    >
+                      <div
+                        class="animate-spin w-8 h-8 border-2 border-hn border-t-transparent rounded-full mb-4"
+                      ></div>
+                      <span class="text-sm text-textMuted"
+                        >Analyzing trends...</span
+                      >
+                    </div>
+                  </div>
 
-              <!-- Insights -->
-              <div class="bg-appBg border border-borderSubtle rounded-xl p-4">
-                <h3 class="text-sm font-medium text-textMain mb-3">
-                  Key Insights
-                </h3>
-                <ul
-                  id="wordcloudInsights"
-                  class="space-y-2 text-sm text-textMuted"
-                ></ul>
-              </div>
-
-              <!-- Trends -->
-              <div class="bg-appBg border border-borderSubtle rounded-xl p-4">
-                <h3 class="text-sm font-medium text-textMain mb-3">
-                  Trend Analysis
-                </h3>
-                <div id="wordcloudTrends" class="space-y-3"></div>
+                  <!-- Insights grid -->
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                    <div
+                      class="bg-appBg border border-borderSubtle rounded-xl p-4"
+                    >
+                      <h3 class="text-sm font-medium text-textMain mb-3">
+                        Categories
+                      </h3>
+                      <div id="wordcloudCategories" class="space-y-2"></div>
+                    </div>
+                    <div
+                      class="bg-appBg border border-borderSubtle rounded-xl p-4"
+                    >
+                      <h3 class="text-sm font-medium text-textMain mb-3">
+                        Key Insights
+                      </h3>
+                      <ul
+                        id="wordcloudInsights"
+                        class="space-y-2 text-sm text-textMuted"
+                      ></ul>
+                    </div>
+                    <div
+                      class="bg-appBg border border-borderSubtle rounded-xl p-4"
+                    >
+                      <h3 class="text-sm font-medium text-textMain mb-3">
+                        Trend Analysis
+                      </h3>
+                      <div id="wordcloudTrends" class="space-y-3"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- Chat sidebar (mirrors commentsPane) -->
+          <aside
+            id="wordcloudChatPane"
+            class="hidden flex-col bg-appBg border-borderSubtle z-40 min-h-0 md:z-10 md:w-[min(420px,38vw)] md:max-w-[480px] md:shrink-0 md:border-l max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-md max-md:border-l max-md:shadow-2xl"
+          >
+            <div
+              class="shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-borderSubtle bg-surface/80 backdrop-blur-md"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-sm font-medium text-textMain tracking-tight"
+                  >Chat with AI</span
+                >
+                <kbd
+                  class="pointer-events-none select-none shrink-0 rounded border border-borderSubtle/90 bg-appBg px-1.5 py-0.5 text-[10px] font-mono text-textMuted/55 leading-none"
+                  title="Toggle chat"
+                  >C</kbd
+                >
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  id="closeWordcloudChatBtn"
+                  type="button"
+                  class="w-8 h-8 rounded-lg border border-borderSubtle text-textMuted hover:text-textMain hover:border-borderHover flex items-center justify-center text-lg leading-none"
+                  aria-label="Close chat"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <!-- Chat body: messages + chips + input (populated by initWordcloudChat) -->
+            <div
+              id="wordcloudChatBody"
+              class="flex flex-col h-full text-textMuted p-4 overflow-hidden"
+            >
+              <!-- Slot for messages area -->
+              <div
+                id="wordcloudChatMessages"
+                class="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3"
+              ></div>
+
+              <!-- Bottom bar: chips + input -->
+              <div class="shrink-0 border-t border-borderSubtle">
+                <div
+                  id="wordcloudChatChips"
+                  class="px-3 pt-3 pb-2 flex flex-wrap gap-1.5"
+                ></div>
+                <div class="flex gap-2 px-3 pb-3">
+                  <input
+                    id="wordcloudChatInput"
+                    type="text"
+                    placeholder="Ask anything about trends…"
+                    maxlength="300"
+                    class="flex-1 bg-appBg border border-borderSubtle rounded-lg px-3 py-2 text-xs text-textMain placeholder-textMuted/50 focus:outline-none focus:border-hn transition-colors font-mono"
+                  />
+                  <button
+                    id="wordcloudChatSendBtn"
+                    type="button"
+                    class="shrink-0 px-3 py-2 bg-hn/10 border border-hn/30 hover:bg-hn/20 rounded-lg text-[11px] text-hn font-mono transition-colors"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
 
@@ -576,7 +745,7 @@
             >
               <div
                 id="readerPostSlot"
-                class="reader-post-slot mt-8 md:mt-10 w-full"
+                class="reader-post-slot max-w-3xl mx-auto mt-8 md:mt-10 w-full"
               >
                 <div
                   id="readerBody"
@@ -627,8 +796,10 @@
                 </button>
               </div>
             </div>
-            <div id="commentsBody" class="flex flex-col h-full text-textMuted p-4 overflow-hidden">
-            </div>
+            <div
+              id="commentsBody"
+              class="flex flex-col h-full text-textMuted p-4 overflow-hidden"
+            ></div>
           </aside>
         </div>
       </div>
@@ -652,12 +823,16 @@
         AI Configuration
       </h2>
       <p class="text-sm text-textMuted mb-6">
-        Configure your AI provider and model. Settings are saved locally in this browser only.
+        Configure your AI provider and model. Settings are saved locally in this
+        browser only.
       </p>
-      
+
       <!-- Provider Selection -->
       <div class="mb-4">
-        <label for="providerSelect" class="block text-sm font-medium text-white mb-2">
+        <label
+          for="providerSelect"
+          class="block text-sm font-medium text-white mb-2"
+        >
           AI Provider
         </label>
         <select
@@ -670,10 +845,13 @@
           <option value="gemini">Google Gemini</option>
         </select>
       </div>
-      
+
       <!-- Model Input -->
       <div class="mb-4">
-        <label for="modelInput" class="block text-sm font-medium text-white mb-2">
+        <label
+          for="modelInput"
+          class="block text-sm font-medium text-white mb-2"
+        >
           Model
         </label>
         <input
@@ -687,10 +865,13 @@
           Leave empty to use default model for selected provider
         </div>
       </div>
-      
+
       <!-- API Key Input -->
       <div class="mb-6">
-        <label for="apiKeyInput" class="block text-sm font-medium text-white mb-2">
+        <label
+          for="apiKeyInput"
+          class="block text-sm font-medium text-white mb-2"
+        >
           API Key
         </label>
         <input
@@ -701,7 +882,7 @@
           class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn font-mono"
         />
       </div>
-      
+
       <div class="flex justify-end gap-3">
         <button
           id="clearKeyBtn"
