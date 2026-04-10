@@ -21,6 +21,7 @@ import {
   wordcloudSplit,
   wordcloudContent,
   readerPane,
+  feedPane,
   wordcloudMobileBackBtn,
   wordcloudPeriodDaily,
   wordcloudPeriodWeekly,
@@ -31,11 +32,18 @@ import {
   wordcloudChatPane,
   wordcloudChatBody,
   closeWordcloudChatBtn,
+  wordcloudBackdrop,
 } from "./dom.js";
 import { escapeHtml, getWordcloudCache, setWordcloudCache } from "./utils.js";
 import { initWordcloudChat } from "./chat.js";
 import { renderReposFromIds } from "./feed.js";
 import { getCommentsOpenPref, setCommentsOpenPref } from "./storage.js";
+
+// Mobile breakpoint constant
+const MOBILE_BREAKPOINT = 768;
+
+// Global variable to store onCardClick callback for WordCloud
+let wordcloudOnCardClick = null;
 import {
   ErrorHandler,
   DefensiveChecker,
@@ -65,6 +73,7 @@ export function hideWordCloudView() {
   wordcloudView.classList.add("hidden");
   emptyState.classList.remove("hidden");
   wordcloudChatPane.classList.add("hidden");
+  wordcloudBackdrop.classList.add("hidden");
 }
 
 // ─── Loader ───────────────────────────────────────────────────────────────────// Loader with comprehensive error handling and defensive programming
@@ -74,6 +83,9 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
 ) {
   const timer = PerformanceMonitor.startTimer("loadWordCloud");
   let controller = new AbortController();
+  
+  // Store onCardClick in global variable accessible by WordCloud
+  wordcloudOnCardClick = onCardClick;
 
   try {
     // Validate inputs
@@ -322,7 +334,7 @@ function renderWordCloud(words) {
     rotationSteps: 2,
     backgroundColor: "transparent",
     click: (item) => {
-      if (item?.[0]) handleWordCloudClick(item[0]);
+      if (item?.[0]) handleWordCloudClick(item[0], wordcloudOnCardClick);
     },
   });
 }
@@ -431,6 +443,18 @@ export function handleWordCloudClick(word, onCardClick) {
   renderReposFromIds(filtered, 1, onCardClick);
   state.allRepos = savedAll;
   wordcloudClearBtn.disabled = false;
+
+  // Handle mobile navigation - return to feed on mobile
+  if (window.innerWidth < MOBILE_BREAKPOINT) {
+    hideWordCloudView();
+    if (readerPane) {
+      readerPane.classList.add("hidden");
+      readerPane.classList.remove("flex");
+    }
+    if (feedPane) {
+      feedPane.classList.remove("hidden");
+    }
+  }
 }
 
 // ─── WordCloud Chat Toggle ───────────────────────────────────────────────────
@@ -442,12 +466,36 @@ export function toggleWordcloudChat() {
   wordcloudChatBtn.setAttribute("aria-pressed", isHidden ? "true" : "false");
   wordcloudChatBtn.classList.toggle("feed-kind-active", isHidden);
 
+  // Handle backdrop for mobile - only show on mobile when opening
+  if (!isHidden && window.innerWidth < MOBILE_BREAKPOINT) {
+    wordcloudBackdrop.classList.remove("hidden");
+  } else {
+    wordcloudBackdrop.classList.add("hidden");
+  }
+
   // Save preference to storage
   setCommentsOpenPref(isHidden);
 }
 
+// Shared function to close WordCloud chat
+function closeWordcloudChat(persist = true) {
+  wordcloudChatPane.classList.add("hidden");
+  wordcloudChatPane.classList.remove("flex");
+  wordcloudChatBtn.setAttribute("aria-pressed", "false");
+  wordcloudChatBtn.classList.remove("feed-kind-active");
+  wordcloudBackdrop.classList.add("hidden");
+
+  // Save preference to storage if requested
+  if (persist) {
+    setCommentsOpenPref(false);
+  }
+}
+
 // Initialize chat state from storage
 export function initWordcloudChatState() {
+  // Ensure backdrop is hidden before any toggle operations
+  wordcloudBackdrop.classList.add("hidden");
+  
   const shouldBeOpen = getCommentsOpenPref();
   if (shouldBeOpen && wordcloudChatPane.classList.contains("hidden")) {
     toggleWordcloudChat();
@@ -463,13 +511,14 @@ if (wordcloudChatBtn) {
 
 if (closeWordcloudChatBtn) {
   closeWordcloudChatBtn.addEventListener("click", () => {
-    wordcloudChatPane.classList.add("hidden");
-    wordcloudChatPane.classList.remove("flex");
-    wordcloudChatBtn.setAttribute("aria-pressed", "false");
-    wordcloudChatBtn.classList.remove("feed-kind-active");
+    closeWordcloudChat(true);
+  });
+}
 
-    // Save preference to storage (closed)
-    setCommentsOpenPref(false);
+// Backdrop click handler for mobile
+if (wordcloudBackdrop) {
+  wordcloudBackdrop.addEventListener("click", () => {
+    closeWordcloudChat(true);
   });
 }
 
@@ -541,10 +590,13 @@ if (wordcloudMobileBackBtn) {
   wordcloudMobileBackBtn.addEventListener("click", () => {
     hideWordCloudView();
     // Also hide the readerPane on mobile so the feed pane is visible again
-    const readerPaneEl = document.getElementById("readerPane");
-    if (readerPaneEl) {
-      readerPaneEl.classList.add("hidden");
-      readerPaneEl.classList.remove("flex");
+    if (readerPane) {
+      readerPane.classList.add("hidden");
+      readerPane.classList.remove("flex");
+    }
+    // Show feed pane again
+    if (feedPane) {
+      feedPane.classList.remove("hidden");
     }
   });
 }

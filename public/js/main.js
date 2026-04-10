@@ -24,6 +24,9 @@ import {
   setCommentsOpenPref,
 } from "./storage.js";
 
+// Mobile breakpoint constant
+const MOBILE_BREAKPOINT = 768;
+
 // ─── Settings modal ───────────────────────────────────────────────────────────
 dom.openSettingsBtn.addEventListener("click", () => {
   // Load saved values
@@ -269,9 +272,29 @@ dom.mobileBackBtn.addEventListener("click", () => {
 });
 
 // ─── Wordcloud ────────────────────────────────────────────────────────────────
-dom.wordcloudBtn.addEventListener("click", () => {
-  showWordCloudView();
-  loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
+dom.wordcloudBtn.addEventListener("click", async () => {
+  try {
+    showWordCloudView();
+    await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
+    
+    // Handle mobile display
+    if (window.innerWidth < MOBILE_BREAKPOINT) {
+      dom.feedPane.classList.add("hidden");
+      dom.readerPane.classList.remove("hidden");
+      dom.readerPane.classList.add("flex");
+    }
+  } catch (error) {
+    console.error("Failed to load WordCloud:", error);
+    // Show error status to user
+    if (dom.statusTextEl) {
+      dom.statusTextEl.textContent = "Error";
+    }
+    // Optionally show error in WordCloud status
+    const wordcloudStatus = document.getElementById("wordcloudStatus");
+    if (wordcloudStatus) {
+      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
+    }
+  }
 });
 dom.wordcloudClearBtn.addEventListener("click", () => {
   renderReposFromIds(state.allRepos, 1, handleCardClick);
@@ -400,7 +423,7 @@ async function handleCardClick(repo, cardElement) {
   state.currentActiveRepo = repo;
   cardElement.classList.add("is-active");
 
-  if (window.innerWidth < 768) {
+  if (window.innerWidth < MOBILE_BREAKPOINT) {
     dom.feedPane.classList.add("hidden");
     dom.readerPane.classList.remove("hidden");
     dom.readerPane.classList.add("flex");
