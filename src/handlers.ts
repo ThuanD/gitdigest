@@ -268,7 +268,8 @@ export async function handleAsk(
       return json({ error: "Missing question", errorCode: "bad_request" }, 400);
 
     // Validate repository ID format
-    if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repoId)) {
+    // Accept both regular repository format (owner/repo) and WordCloud format (wordcloud_period)
+    if (!/^(?:[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+|wordcloud_(?:daily|weekly|monthly))$/.test(repoId)) {
       return json({ error: "Invalid repoId format", errorCode: "bad_request" }, 400);
     }
 

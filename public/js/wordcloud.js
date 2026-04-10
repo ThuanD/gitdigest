@@ -25,6 +25,7 @@ import {
   wordcloudPeriodDaily,
   wordcloudPeriodWeekly,
   wordcloudPeriodMonthly,
+  wordcloudPeriodLabel,
   wordcloudChatToggleWrap,
   wordcloudChatBtn,
   wordcloudChatPane,
@@ -52,6 +53,10 @@ export function showWordCloudView() {
   wordcloudView.classList.remove("hidden");
   readerPane.classList.remove("hidden");
 
+  // Sync WordCloud period with current feed period
+  updateCurrentWordcloudPeriod(state.feedKind);
+  updateWordcloudPeriodButtons(state.feedKind);
+
   // Initialize chat state from storage
   initWordcloudChatState();
 }
@@ -76,9 +81,8 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     DefensiveChecker.isValidLanguage(state.currentLang);
 
     // Update period label with error handling
-    const periodLabel = document.getElementById("wordcloudPeriodLabel");
-    if (periodLabel) {
-      periodLabel.textContent = feedKind;
+    if (wordcloudPeriodLabel) {
+      wordcloudPeriodLabel.textContent = feedKind;
     }
 
     // 1. Check client cache first with error handling
