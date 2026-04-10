@@ -14,6 +14,8 @@ import {
   showWordCloudView,
   hideWordCloudView,
   toggleWordcloudChat,
+  getCurrentWordcloudPeriod,
+  updateCurrentWordcloudPeriod,
 } from "./wordcloud.js";
 import {
   getSourceOpenPref,
@@ -156,6 +158,9 @@ function setFeedKind(kind) {
   state.currentPage = 1;
   loadReposClient(1, state.feedKind, handleCardClick);
   syncFeedKindButtons();
+  
+  // Sync wordcloud period with feed kind
+  updateCurrentWordcloudPeriod(kind);
 }
 
 dom.feedKindDaily.addEventListener("click", () => setFeedKind("daily"));
@@ -266,7 +271,7 @@ dom.mobileBackBtn.addEventListener("click", () => {
 // ─── Wordcloud ────────────────────────────────────────────────────────────────
 dom.wordcloudBtn.addEventListener("click", () => {
   showWordCloudView();
-  loadWordCloud(state.feedKind, handleCardClick);
+  loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
 });
 dom.wordcloudClearBtn.addEventListener("click", () => {
   renderReposFromIds(state.allRepos, 1, handleCardClick);
@@ -417,6 +422,9 @@ async function handleCardClick(repo, cardElement) {
   dom.readerBody.classList.remove("animate-reader-in", "opacity-50");
   dom.readerTitle.textContent = repo.title;
   dom.readerBody.innerHTML = "";
+  if (dom.readerStatus) {
+    dom.readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
+  }
   document.getElementById("readerChat")?.remove();
 
   let sourceHref = "";

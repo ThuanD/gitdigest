@@ -97,7 +97,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
     if (!summary) throw new Error("Empty summary");
 
     const statusLabel = data.isCached
-      ? `Server cache${summaryStatusLangSuffix()}`
+      ? `Cached${summaryStatusLangSuffix()}`
       : `Generated${summaryStatusLangSuffix()}`;
     const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
 

@@ -1,6 +1,6 @@
 import { MD_SANITIZE } from "./constants.js";
 import { resolveReadmeImages } from "./utils.js";
-import { sourceFramePanel, readerSourceIframeWrap, readerBody } from "./dom.js";
+import { sourceFramePanel, readerSourceIframeWrap, readerBody, readerStatus } from "./dom.js";
 
 const README_CACHE_TTL = 30 * 60 * 1000;
 const readmeCache = new Map();
@@ -83,6 +83,11 @@ function renderReadmeContent(data, repo) {
     readmeStyles() +
     `<div class="readme-content">${DOMPurify.sanitize(html, MD_SANITIZE)}</div>`;
   processReadmeLinks(sr);
+  
+  // Update status to show source loaded
+  if (readerStatus) {
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span><span class="uppercase tracking-wider">Source loaded</span></span>`;
+  }
 }
 
 function renderReadmeError(err, repo) {
@@ -111,8 +116,13 @@ function renderReadmeError(err, repo) {
       </svg>
       <p class="text-sm text-textMuted mb-2">${msg}</p>
       ${hint ? `<p class="text-xs text-textMuted mb-3">${hint}</p>` : ""}
-      <a href="${repo.url}" target="_blank" rel="noopener noreferrer" class="text-xs text-hn hover:underline">View on GitHub ↗</a>
+      <a href="${repo.url}" target="_blank" rel="noopener noreferrer" class="text-xs text-hn hover:underline">View on GitHub</a>
     </div>`;
+    
+  // Update status to show error
+  if (readerStatus) {
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Source error</span></span>`;
+  }
 }
 
 // ─── Panel open/close ─────────────────────────────────────────────────────────
@@ -141,6 +151,11 @@ export function closeSourcePanel(persist, deps) {
   readerSourceIframeWrap.classList.remove("hidden");
   if (persist) deps.setSourceOpenPref(false);
   syncReaderViewToggleUi(deps.readerViewSummaryBtn, deps.readerViewSourceBtn);
+  
+  // Reset status to loading for summary view
+  if (readerStatus) {
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
+  }
 }
 
 export async function openSourcePanel(repo, persist, deps) {
@@ -159,6 +174,11 @@ export async function openSourcePanel(repo, persist, deps) {
   if (cached && Date.now() - cached.time < README_CACHE_TTL) {
     renderReadmeContent(cached.data, repo);
     return;
+  }
+
+  // Set loading status only if not cached
+  if (readerStatus) {
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading source</span></span>`;
   }
 
   // Loading state

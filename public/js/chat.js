@@ -33,29 +33,29 @@ function safeEncode(str) {
     return btoa(encodeURIComponent(str));
   } catch (error) {
     // Fallback to alphanumeric hash for problematic strings
-    return str.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+    return str.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
   }
 }
 
 // Validation helper for chat input
 function validateChatInput(text) {
   const trimmedText = text.trim();
-  
+
   // Length validation
   if (trimmedText.length < 10) {
     return {
       isValid: false,
-      error: "Question too short (min 10 characters)"
+      error: "Question too short (min 10 characters)",
     };
   }
-  
+
   if (trimmedText.length > 300) {
     return {
       isValid: false,
-      error: "Question too long (max 300 characters)"
+      error: "Question too long (max 300 characters)",
     };
   }
-  
+
   // Content filtering - block abuse patterns
   const blockedPatterns = [
     /ignore.*summary/i,
@@ -63,20 +63,22 @@ function validateChatInput(text) {
     /act.*different/i,
     /system.*prompt/i,
     /<script|javascript:|data:/i,
-    /hack|exploit|bypass/i
+    /hack|exploit|bypass/i,
   ];
-  
-  const isBlocked = blockedPatterns.some(pattern => pattern.test(trimmedText));
+
+  const isBlocked = blockedPatterns.some((pattern) =>
+    pattern.test(trimmedText),
+  );
   if (isBlocked) {
     return {
       isValid: false,
-      error: "Question contains blocked content"
+      error: "Question contains blocked content",
     };
   }
-  
+
   return {
     isValid: true,
-    error: null
+    error: null,
   };
 }
 
@@ -96,7 +98,7 @@ function getChatHistory(repoId) {
         typeof msg === "object" &&
         msg.type &&
         typeof msg.text === "string" &&
-        ["user", "assistant", "error"].includes(msg.type)
+        ["user", "assistant", "error"].includes(msg.type),
     );
   } catch (error) {
     console.warn("Error loading chat history:", error);
@@ -114,12 +116,12 @@ function saveChatHistory(repoId, messages) {
         typeof msg === "object" &&
         msg.type &&
         typeof msg.text === "string" &&
-        ["user", "assistant", "error"].includes(msg.type)
+        ["user", "assistant", "error"].includes(msg.type),
     );
 
     localStorage.setItem(
       `${LS_CHAT_HISTORY}_${repoId}`,
-      JSON.stringify(validMessages)
+      JSON.stringify(validMessages),
     );
   } catch (error) {
     console.warn("Error saving chat history:", error);
@@ -174,7 +176,7 @@ function renderUserBubble(container, text) {
     "beforeend",
     `<div class="flex justify-end">
       <div class="max-w-[85%] bg-hn/10 border border-hn/20 rounded-xl rounded-tr-sm px-3 py-2 text-xs text-textMain">${escapeHtml(text)}</div>
-    </div>`
+    </div>`,
   );
   requestAnimationFrame(() => {
     container.scrollTop = container.scrollHeight;
@@ -188,12 +190,17 @@ function renderLoadingBubble(container, id) {
       <div class="bg-surface border border-borderSubtle rounded-xl rounded-tl-sm px-3 py-2 text-xs text-textMuted flex items-center gap-2">
         ${SPINNER_SVG}<span>Thinking…</span>
       </div>
-    </div>`
+    </div>`,
   );
   container.scrollTop = container.scrollHeight;
 }
 
-function renderAnswerBubble(container, answer, isCached = false, bgClass = "bg-surface") {
+function renderAnswerBubble(
+  container,
+  answer,
+  isCached = false,
+  bgClass = "bg-surface",
+) {
   container.insertAdjacentHTML(
     "beforeend",
     `<div class="flex justify-start">
@@ -201,7 +208,7 @@ function renderAnswerBubble(container, answer, isCached = false, bgClass = "bg-s
         <div class="text-xs prose prose-invert prose-sm max-w-none">${markdownToSafeHtml(answer)}</div>
         ${isCached ? `<p class="text-[10px] font-mono text-textMuted/40 mt-1.5 text-right">cached</p>` : ""}
       </div>
-    </div>`
+    </div>`,
   );
   requestAnimationFrame(() => {
     container.scrollTop = container.scrollHeight;
@@ -215,7 +222,7 @@ function renderErrorBubble(container, msg) {
       <div class="max-w-[85%] bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 text-xs text-red-400">
         ${escapeHtml(msg || "Something went wrong")}
       </div>
-    </div>`
+    </div>`,
   );
   requestAnimationFrame(() => {
     container.scrollTop = container.scrollHeight;
@@ -281,13 +288,21 @@ export async function handleAsk({
     const cachedAnswer = answerCache.get(cacheKey);
     renderAnswerBubble(messagesEl, cachedAnswer, true, bgClass);
     if (repoId) {
-      persistChatMessage(repoId, { type: "assistant", text: cachedAnswer, isCached: true });
+      persistChatMessage(repoId, {
+        type: "assistant",
+        text: cachedAnswer,
+        isCached: true,
+      });
       // Update user message with questionId for chip questions (successful response)
       if (questionId) {
         const history = getChatHistory(repoId);
         const updatedHistory = [...history]; // Create copy to avoid race condition
         const lastMessage = updatedHistory[updatedHistory.length - 1];
-        if (lastMessage && lastMessage.type === "user" && lastMessage.text === questionText) {
+        if (
+          lastMessage &&
+          lastMessage.type === "user" &&
+          lastMessage.text === questionText
+        ) {
           lastMessage.questionId = questionId;
           saveChatHistory(repoId, updatedHistory);
         }
@@ -321,7 +336,10 @@ export async function handleAsk({
       // Re-enable chip so user can retry
       if (chipBtn) {
         chipBtn.disabled = false;
-        chipBtn.textContent = stripPrefix(chipBtn.textContent).replace(/^⏳\s*/, "");
+        chipBtn.textContent = stripPrefix(chipBtn.textContent).replace(
+          /^⏳\s*/,
+          "",
+        );
       }
       return;
     }
@@ -331,13 +349,21 @@ export async function handleAsk({
     maintainCacheSize(); // Maintain cache size limit
     renderAnswerBubble(messagesEl, data.answer, data.isCached, bgClass);
     if (repoId) {
-      persistChatMessage(repoId, { type: "assistant", text: data.answer, isCached: !!data.isCached });
+      persistChatMessage(repoId, {
+        type: "assistant",
+        text: data.answer,
+        isCached: !!data.isCached,
+      });
       // Update user message with questionId for chip questions (successful response)
       if (questionId) {
         const history = getChatHistory(repoId);
         const updatedHistory = [...history]; // Create copy to avoid race condition
         const lastMessage = updatedHistory[updatedHistory.length - 1];
-        if (lastMessage && lastMessage.type === "user" && lastMessage.text === questionText) {
+        if (
+          lastMessage &&
+          lastMessage.type === "user" &&
+          lastMessage.text === questionText
+        ) {
           lastMessage.questionId = questionId;
           saveChatHistory(repoId, updatedHistory);
         }
@@ -356,7 +382,10 @@ export async function handleAsk({
     // Re-enable chip so user can retry
     if (chipBtn) {
       chipBtn.disabled = false;
-      chipBtn.textContent = stripPrefix(chipBtn.textContent).replace(/^⏳\s*/, "");
+      chipBtn.textContent = stripPrefix(chipBtn.textContent).replace(
+        /^⏳\s*/,
+        "",
+      );
     }
   }
 }
@@ -415,7 +444,8 @@ export function loadChatContent(repo, container) {
       // ── Messages area ──
       const messagesEl = document.createElement("div");
       messagesEl.id = "sidebarChatMessages";
-      messagesEl.className = "flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3";
+      messagesEl.className =
+        "flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3";
       container.appendChild(messagesEl);
 
       // Replay history (render only — no persistence)
@@ -427,7 +457,12 @@ export function loadChatContent(repo, container) {
               break;
             case "assistant":
               if (message.text)
-                renderAnswerBubble(messagesEl, message.text, !!message.isCached, "bg-surface");
+                renderAnswerBubble(
+                  messagesEl,
+                  message.text,
+                  !!message.isCached,
+                  "bg-surface",
+                );
               break;
             case "error":
               if (message.text) renderErrorBubble(messagesEl, message.text);
@@ -449,7 +484,7 @@ export function loadChatContent(repo, container) {
               (q) =>
                 `<button data-qid="${q.id}" class="sidebar-chat-chip px-2.5 py-1 rounded-full border border-borderSubtle bg-appBg text-[11px] text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
                   ${escapeHtml(q.label)}
-                </button>`
+                </button>`,
             )
             .join("")}
         </div>
@@ -489,7 +524,7 @@ export function loadChatContent(repo, container) {
               question: q.question,
               lang: state.currentLang,
               summary: localSummary,
-              type: 'chip',
+              type: "chip",
             },
             chipBtn: btn,
             messagesEl,
@@ -506,14 +541,14 @@ export function loadChatContent(repo, container) {
       const doSend = () => {
         const text = inputEl.value.trim();
         if (!text) return;
-        
+
         // Validate input before sending
         const validation = validateChatInput(text);
         if (!validation.isValid) {
           renderErrorBubble(messagesEl, validation.error);
           return;
         }
-        
+
         inputEl.value = "";
 
         const localSummary =
@@ -530,7 +565,7 @@ export function loadChatContent(repo, container) {
             question: text,
             lang: state.currentLang,
             summary: localSummary,
-            type: 'manual',
+            type: "manual",
           },
           chipBtn: null, // manual input — no chip to manage
           messagesEl,
@@ -588,7 +623,7 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
       (q) =>
         `<button data-wcqid="${q.id}" class="wc-chat-chip px-2.5 py-1 rounded-full border border-borderSubtle bg-appBg text-[11px] text-textMuted hover:border-hn/50 hover:text-textMain transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed">
           ${escapeHtml(q.label)}
-        </button>`
+        </button>`,
     )
     .join("");
 
@@ -664,23 +699,23 @@ function cleanupWordcloudChatEvents() {
     wordcloudChatCleanup();
     wordcloudChatCleanup = null;
   }
-  
+
   // Remove all event listeners from chip buttons
   const chips = document.querySelectorAll(".wc-chat-chip");
-  chips.forEach(chip => {
+  chips.forEach((chip) => {
     const newChip = chip.cloneNode(true);
     chip.parentNode.replaceChild(newChip, chip);
   });
-  
+
   // Remove event listeners from send button and input
   const sendBtn = document.getElementById("wordcloudChatSendBtn");
   const inputEl = document.getElementById("wordcloudChatInput");
-  
+
   if (sendBtn) {
     const newSendBtn = sendBtn.cloneNode(true);
     sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
   }
-  
+
   if (inputEl) {
     const newInputEl = inputEl.cloneNode(true);
     inputEl.parentNode.replaceChild(newInputEl, inputEl);

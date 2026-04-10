@@ -1,5 +1,11 @@
 import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL } from "./constants.js";
 import { state } from "./state.js";
+
+function wordcloudStatusLangSuffix() {
+  return state.currentLang === "en"
+    ? ""
+    : ` (${state.currentLang.toUpperCase()})`;
+}
 import { getSecureApiKey, migrateApiKeysToSecureStorage } from "./security.js";
 import {
   wordcloudCanvas,
@@ -29,14 +35,14 @@ import { escapeHtml, getWordcloudCache, setWordcloudCache } from "./utils.js";
 import { initWordcloudChat } from "./chat.js";
 import { renderReposFromIds } from "./feed.js";
 import { getCommentsOpenPref, setCommentsOpenPref } from "./storage.js";
-import { 
-  ErrorHandler, 
-  DefensiveChecker, 
-  SafeStorage, 
+import {
+  ErrorHandler,
+  DefensiveChecker,
+  SafeStorage,
   PerformanceMonitor,
   CacheError,
   SecurityError,
-  ValidationError 
+  ValidationError,
 } from "./error-handler.js";
 
 // ─── View toggle ──────────────────────────────────────────────────────────────
@@ -45,7 +51,7 @@ export function showWordCloudView() {
   readerWorkspace.classList.add("hidden");
   wordcloudView.classList.remove("hidden");
   readerPane.classList.remove("hidden");
-  
+
   // Initialize chat state from storage
   initWordcloudChatState();
 }
@@ -57,19 +63,17 @@ export function hideWordCloudView() {
 }
 
 // ─── Loader ───────────────────────────────────────────────────────────────────// Loader with comprehensive error handling and defensive programming
-export const loadWordCloud = PerformanceMonitor.measureFunction(async function(feedKind, onCardClick) {
-  const timer = PerformanceMonitor.startTimer('loadWordCloud');
-  
+export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
+  feedKind,
+  onCardClick,
+) {
+  const timer = PerformanceMonitor.startTimer("loadWordCloud");
+  let controller = new AbortController();
+
   try {
     // Validate inputs
     DefensiveChecker.isValidPeriod(feedKind);
     DefensiveChecker.isValidLanguage(state.currentLang);
-    
-    // Show loading state
-    wordcloudCanvas.style.display = "none";
-    wordcloudLoading.classList.remove("hidden");
-    wordcloudLoading.classList.add("flex");
-    wordcloudStatus.textContent = "Analyzing";
 
     // Update period label with error handling
     const periodLabel = document.getElementById("wordcloudPeriodLabel");
@@ -81,42 +85,62 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function(f
     try {
       const cachedData = getWordcloudCache(feedKind, state.currentLang);
       if (cachedData) {
-        wordcloudStatus.textContent = "From local cache";
+        if (wordcloudStatus) {
+          wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">From local cache${wordcloudStatusLangSuffix()}</span></span>`;
+        }
         renderWordCloud(cachedData.words);
         renderWordCloudInsights(cachedData, feedKind);
         timer.end();
         return;
       }
     } catch (cacheError) {
-      ErrorHandler.handle(new CacheError('Failed to read from cache', 'CACHE_READ_ERROR'), { feedKind, lang: state.currentLang });
+      ErrorHandler.handle(
+        new CacheError("Failed to read from cache", "CACHE_READ_ERROR"),
+        { feedKind, lang: state.currentLang },
+      );
       // Continue with API request
+    }
+
+    // Show loading state only if not cached
+    wordcloudCanvas.style.display = "none";
+    wordcloudLoading.classList.remove("hidden");
+    wordcloudLoading.classList.add("flex");
+    if (wordcloudStatus) {
+      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Analyzing</span></span>`;
     }
 
     // Get configuration with safe defaults
     const provider = SafeStorage.getItem(LS_AI_PROVIDER, "openai");
     const model = SafeStorage.getItem(LS_AI_MODEL, "").trim();
-    
+
     // Migrate to secure storage if needed
     try {
       migrateApiKeysToSecureStorage();
     } catch (migrationError) {
-      ErrorHandler.handle(new SecurityError('Failed to migrate API keys', 'MIGRATION_ERROR'));
+      ErrorHandler.handle(
+        new SecurityError("Failed to migrate API keys", "MIGRATION_ERROR"),
+      );
     }
-    
+
     // Get API key from secure storage with fallback
     let apiKey;
     try {
-      apiKey = getSecureApiKey(provider) || getSecureApiKey('default') || SafeStorage.getItem(LS_API_KEY, "").trim();
-      
+      apiKey =
+        getSecureApiKey(provider) ||
+        getSecureApiKey("default") ||
+        SafeStorage.getItem(LS_API_KEY, "").trim();
+
       // Validate API key if provided
       if (apiKey) {
         DefensiveChecker.isValidApiKey(apiKey);
       }
     } catch (keyError) {
-      ErrorHandler.handle(new SecurityError('Invalid API key format', 'INVALID_API_KEY'));
+      ErrorHandler.handle(
+        new SecurityError("Invalid API key format", "INVALID_API_KEY"),
+      );
       apiKey = ""; // Use empty key to continue without API
     }
-    
+
     const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
     // Build query parameters with validation
@@ -124,27 +148,27 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function(f
       period: feedKind,
       lang: state.currentLang,
       ...(provider && { provider }),
-      ...(model && { model })
+      ...(model && { model }),
     });
 
     // Make API request with timeout and error handling
-    const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
+
     let res, data;
     try {
-      res = await fetch(`/api/wordcloud?${params}`, { 
-        headers, 
-        signal: controller.signal 
+      res = await fetch(`/api/wordcloud?${params}`, {
+        headers,
+        signal: controller.signal,
       });
       data = await res.json();
     } catch (fetchError) {
-      if (fetchError.name === 'AbortError') {
-        throw new Error('Request timeout - please try again');
+      if (fetchError.name === "AbortError") {
+        throw new Error("Request timeout - please try again");
       }
       throw fetchError;
     } finally {
       clearTimeout(timeoutId);
+      controller = null;
     }
 
     // Validate response
@@ -155,41 +179,52 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function(f
     }
 
     // Validate response data structure
-    DefensiveChecker.hasProperty(data, 'words');
+    DefensiveChecker.hasProperty(data, "words");
     if (!Array.isArray(data.words)) {
-      throw new ValidationError('Response words must be an array', 'words', data.words);
+      throw new ValidationError(
+        "Response words must be an array",
+        "words",
+        data.words,
+      );
     }
 
     // 2. Cache the response data with error handling
     try {
       const cacheSuccess = setWordcloudCache(feedKind, state.currentLang, data);
       if (!cacheSuccess) {
-        console.warn('Failed to cache response data');
+        console.warn("Failed to cache response data");
       }
     } catch (cacheError) {
-      ErrorHandler.handle(new CacheError('Failed to save to cache', 'CACHE_WRITE_ERROR'));
+      ErrorHandler.handle(
+        new CacheError("Failed to save to cache", "CACHE_WRITE_ERROR"),
+      );
       // Continue without caching
     }
 
     // Update UI
-    wordcloudStatus.textContent = data.isCached ? "From server cache" : "Generated";
+    if (wordcloudStatus) {
+      const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
+      const statusText = data.isCached
+        ? `From server cache${wordcloudStatusLangSuffix()}`
+        : `Generated${wordcloudStatusLangSuffix()}`;
+      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusText}</span></span>`;
+    }
     renderWordCloud(data.words);
     renderWordCloudInsights(data, feedKind);
-    
+
     timer.end();
-    
   } catch (error) {
     timer.end();
-    const errorMessage = ErrorHandler.handle(error, { 
-      operation: 'loadWordCloud', 
-      feedKind, 
-      lang: state.currentLang 
+    const errorMessage = ErrorHandler.handle(error, {
+      operation: "loadWordCloud",
+      feedKind,
+      lang: state.currentLang,
     });
-    
+
     console.error("WordCloud load error:", error);
     renderWordCloudError("server_error", errorMessage);
   }
-}, 'loadWordCloud');
+}, "loadWordCloud");
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 const WC_ERROR_MAP = {
@@ -228,7 +263,9 @@ function renderWordCloudError(errorCode, rawMessage) {
     title: "Failed",
     hint: rawMessage || "Unknown error.",
   };
-  wordcloudStatus.textContent = def.title;
+  if (wordcloudStatus) {
+    wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.title}</span></span>`;
+  }
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
 
@@ -400,7 +437,7 @@ export function toggleWordcloudChat() {
   wordcloudChatPane.classList.toggle("flex", isHidden);
   wordcloudChatBtn.setAttribute("aria-pressed", isHidden ? "true" : "false");
   wordcloudChatBtn.classList.toggle("feed-kind-active", isHidden);
-  
+
   // Save preference to storage
   setCommentsOpenPref(isHidden);
 }
@@ -426,50 +463,73 @@ if (closeWordcloudChatBtn) {
     wordcloudChatPane.classList.remove("flex");
     wordcloudChatBtn.setAttribute("aria-pressed", "false");
     wordcloudChatBtn.classList.remove("feed-kind-active");
-    
+
     // Save preference to storage (closed)
     setCommentsOpenPref(false);
   });
 }
 
 // ─── Period Toggle ───────────────────────────────────────────────────────────
-let currentWordcloudPeriod = 'daily';
+let currentWordcloudPeriod = "daily";
+
+export function updateCurrentWordcloudPeriod(period) {
+  currentWordcloudPeriod = period;
+}
+
+export function getCurrentWordcloudPeriod() {
+  return currentWordcloudPeriod;
+}
 
 function updateWordcloudPeriodButtons(activePeriod) {
+  if (!activePeriod) return; // Early return for null/undefined
+  
   const buttons = {
     daily: wordcloudPeriodDaily,
     weekly: wordcloudPeriodWeekly,
-    monthly: wordcloudPeriodMonthly
+    monthly: wordcloudPeriodMonthly,
   };
-  
+
   Object.entries(buttons).forEach(([period, button]) => {
     if (button) {
       const isActive = period === activePeriod;
-      button.setAttribute('aria-pressed', isActive.toString());
-      button.classList.toggle('feed-kind-active', isActive);
+      button.setAttribute("aria-pressed", isActive.toString());
+      button.classList.toggle("feed-kind-active", isActive);
     }
   });
 }
 
 function handleWordcloudPeriodChange(period) {
   if (period === currentWordcloudPeriod) return;
-  
+
   currentWordcloudPeriod = period;
   updateWordcloudPeriodButtons(period);
-  
+
   // Reload wordcloud with new period
-  loadWordCloud(period, null);
+  try {
+    loadWordCloud(period, null);
+  } catch (error) {
+    // Reset status on error
+    if (wordcloudStatus) {
+      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
+    }
+  }
 }
 
 // Wire up period toggle buttons
 if (wordcloudPeriodDaily) {
-  wordcloudPeriodDaily.addEventListener('click', () => handleWordcloudPeriodChange('daily'));
+  wordcloudPeriodDaily.addEventListener("click", () =>
+    handleWordcloudPeriodChange("daily"),
+  );
 }
 if (wordcloudPeriodWeekly) {
-  wordcloudPeriodWeekly.addEventListener('click', () => handleWordcloudPeriodChange('weekly'));
+  wordcloudPeriodWeekly.addEventListener("click", () =>
+    handleWordcloudPeriodChange("weekly"),
+  );
 }
 if (wordcloudPeriodMonthly) {
-  wordcloudPeriodMonthly.addEventListener('click', () => handleWordcloudPeriodChange('monthly'));
+  wordcloudPeriodMonthly.addEventListener("click", () =>
+    handleWordcloudPeriodChange("monthly"),
+  );
 }
 
 // Mobile: back button hides wordcloud view and restores feed visibility
