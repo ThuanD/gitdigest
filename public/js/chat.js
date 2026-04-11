@@ -17,7 +17,11 @@ import { escapeHtml, markdownToSafeHtml } from "./utils.js";
 const answerCache = new Map();
 const MAX_CACHE_SIZE = 100;
 
-// Helper to maintain cache size limit
+// Separate in-memory cache for WordCloud chat answers
+const wordcloudAnswerCache = new Map();
+const WC_MAX_CACHE_SIZE = 50;
+
+// Helper to maintain cache size limit with proper LRU
 function maintainCacheSize() {
   if (answerCache.size > MAX_CACHE_SIZE) {
     const firstKey = answerCache.keys().next().value;
@@ -27,14 +31,80 @@ function maintainCacheSize() {
   }
 }
 
-// Safe encoding function that handles Unicode characters
+// Helper to maintain WordCloud cache size limit with proper LRU
+function maintainWordcloudCacheSize() {
+  if (wordcloudAnswerCache.size > WC_MAX_CACHE_SIZE) {
+    // Find the least recently used entry (oldest access time)
+    let oldestKey = null;
+    let oldestTime = Date.now();
+    
+    for (const [key, value] of wordcloudAnswerCache.entries()) {
+      if (value.accessTime && value.accessTime < oldestTime) {
+        oldestTime = value.accessTime;
+        oldestKey = key;
+      }
+    }
+    
+    // If no access time found, fall back to first key
+    if (!oldestKey) {
+      oldestKey = wordcloudAnswerCache.keys().next().value;
+    }
+    
+    if (oldestKey !== undefined) {
+      wordcloudAnswerCache.delete(oldestKey);
+    }
+  }
+}
+
+// Synchronized localStorage operations to prevent race conditions
+const localStorageMutex = new Map();
+
+async function withLocalStorageLock(key, operation) {
+  const maxWaitTime = 5000; // 5 seconds max wait
+  const startTime = Date.now();
+  
+  while (localStorageMutex.has(key) && (Date.now() - startTime) < maxWaitTime) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  
+  if (localStorageMutex.has(key)) {
+    throw new Error(`localStorage operation timed out for key: ${key}`);
+  }
+  
+  try {
+    localStorageMutex.set(key, true);
+    return await operation();
+  } finally {
+    localStorageMutex.delete(key);
+  }
+}
+
+// Safe encoding function that handles Unicode characters with proper hashing
 function safeEncode(str) {
   try {
     return btoa(encodeURIComponent(str));
   } catch (error) {
-    // Fallback to alphanumeric hash for problematic strings
-    return str.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+    // Use simple hash function to prevent collisions
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
   }
+}
+
+// Validate feedKind parameter
+function validateFeedKind(feedKind) {
+  const validKinds = ['daily', 'weekly', 'monthly'];
+  return validKinds.includes(feedKind) ? feedKind : 'daily';
+}
+
+// Generate period-specific cache key for WordCloud
+function generateWordcloudCacheKey(feedKind, question, lang) {
+  const validatedFeedKind = validateFeedKind(feedKind);
+  return `wc_${validatedFeedKind}_${safeEncode(question)}_${lang}`;
 }
 
 // Validation helper for chat input
@@ -106,33 +176,64 @@ function getChatHistory(repoId) {
   }
 }
 
-function saveChatHistory(repoId, messages) {
-  try {
-    if (!Array.isArray(messages)) return;
+async function saveChatHistory(repoId, messages) {
+  const storageKey = `${LS_CHAT_HISTORY}_${repoId}`;
+  
+  return withLocalStorageLock(storageKey, async () => {
+    try {
+      if (!Array.isArray(messages)) return;
 
-    const validMessages = messages.filter(
-      (msg) =>
-        msg &&
-        typeof msg === "object" &&
-        msg.type &&
-        typeof msg.text === "string" &&
-        ["user", "assistant", "error"].includes(msg.type),
-    );
+      const validMessages = messages.filter(
+        (msg) =>
+          msg &&
+          typeof msg === "object" &&
+          msg.type &&
+          typeof msg.text === "string" &&
+          ["user", "assistant", "error"].includes(msg.type),
+      );
 
-    localStorage.setItem(
-      `${LS_CHAT_HISTORY}_${repoId}`,
-      JSON.stringify(validMessages),
-    );
-  } catch (error) {
-    console.warn("Error saving chat history:", error);
-  }
+      const serializedData = JSON.stringify(validMessages);
+      
+      // Check localStorage quota before setting
+      try {
+        localStorage.setItem(storageKey, serializedData);
+      } catch (quotaError) {
+        if (quotaError.name === 'QuotaExceededError' || 
+            quotaError.message.includes('quota') ||
+            quotaError.message.includes('storage')) {
+          
+          // Try to free up space by removing oldest entries
+          console.warn("LocalStorage quota exceeded, attempting cleanup...");
+          
+          // Remove oldest half of messages
+          const halfLength = Math.floor(validMessages.length / 2);
+          const trimmedMessages = validMessages.slice(halfLength);
+          
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(trimmedMessages));
+            console.log("Successfully freed up space by removing old messages");
+          } catch (retryError) {
+            // If still fails, clear all history for this repo
+            console.warn("Still unable to save, clearing all history for this repo");
+            localStorage.removeItem(storageKey);
+            throw new Error("Storage quota exceeded. History cleared.");
+          }
+        } else {
+          throw quotaError;
+        }
+      }
+    } catch (error) {
+      console.warn("Error saving chat history:", error);
+      throw error;
+    }
+  });
 }
 
 /**
  * Append a message to persisted chat history.
  * Only call this when a NEW message is produced (not when replaying history).
  */
-function persistChatMessage(repoId, message) {
+async function persistChatMessage(repoId, message) {
   if (
     !repoId ||
     !message ||
@@ -143,30 +244,105 @@ function persistChatMessage(repoId, message) {
     return;
   }
 
-  const history = getChatHistory(repoId);
-  const newMessage = {
-    type: message.type,
-    text: message.text,
-    timestamp: Date.now(),
+  const storageKey = `${LS_CHAT_HISTORY}_${repoId}`;
+  
+  return withLocalStorageLock(storageKey, async () => {
+    const history = getChatHistory(repoId);
+    const newMessage = {
+      type: message.type,
+      text: message.text,
+      timestamp: Date.now(),
+    };
+
+    if (message.type === "assistant" && typeof message.isCached === "boolean") {
+      newMessage.isCached = message.isCached;
+    }
+
+    // For chip questions, persist the questionId so we can restore chip state
+    if (message.type === "user" && message.questionId) {
+      newMessage.questionId = message.questionId;
+    }
+
+    history.push(newMessage);
+
+    // Keep last 50 messages per repo
+    if (history.length > 50) {
+      history.splice(0, history.length - 50);
+    }
+
+    localStorage.setItem(storageKey, JSON.stringify(history));
+  });
+}
+
+/**
+ * Get WordCloud-specific chat history with period isolation
+ */
+function getWordcloudChatHistory(feedKind) {
+  return getChatHistory(`wordcloud_${feedKind}`);
+}
+
+/**
+ * Persist WordCloud-specific chat message with period isolation
+ */
+async function persistWordcloudChatMessage(feedKind, message) {
+  return persistChatMessage(`wordcloud_${feedKind}`, message);
+}
+
+/**
+ * Clear WordCloud cache for a specific period
+ */
+function clearWordcloudCache(feedKind) {
+  try {
+    const validatedFeedKind = validateFeedKind(feedKind);
+    const historyKey = `wordcloud_${validatedFeedKind}`;
+    
+    // Clear localStorage with error handling
+    try {
+      localStorage.removeItem(`${LS_CHAT_HISTORY}_${historyKey}`);
+    } catch (error) {
+      console.warn("Failed to clear localStorage:", error);
+    }
+    
+    // Clear in-memory cache entries for this period
+    const keysToDelete = [];
+    for (const key of wordcloudAnswerCache.keys()) {
+      if (key.startsWith(`wc_${validatedFeedKind}_`)) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(key => wordcloudAnswerCache.delete(key));
+    
+    console.log(`Cleared cache for period: ${validatedFeedKind}`);
+  } catch (error) {
+    console.error("Failed to clear WordCloud cache:", error);
+  }
+}
+
+/**
+ * Get WordCloud cache statistics
+ */
+function getWordcloudCacheStats() {
+  const periodStats = {};
+  const periods = ['daily', 'weekly', 'monthly'];
+  
+  periods.forEach(period => {
+    const history = getWordcloudChatHistory(period);
+    const memoryEntries = Array.from(wordcloudAnswerCache.keys())
+      .filter(key => key.startsWith(`wc_${period}_`)).length;
+    
+    periodStats[period] = {
+      historyMessages: history.length,
+      memoryEntries: memoryEntries,
+      totalCacheSize: history.length + memoryEntries
+    };
+  });
+  
+  return {
+    periods: periodStats,
+    totalMemoryEntries: wordcloudAnswerCache.size,
+    maxMemoryEntries: WC_MAX_CACHE_SIZE,
+    memoryUtilization: `${((wordcloudAnswerCache.size / WC_MAX_CACHE_SIZE) * 100).toFixed(1)}%`
   };
-
-  if (message.type === "assistant" && typeof message.isCached === "boolean") {
-    newMessage.isCached = message.isCached;
-  }
-
-  // For chip questions, persist the questionId so we can restore chip state
-  if (message.type === "user" && message.questionId) {
-    newMessage.questionId = message.questionId;
-  }
-
-  history.push(newMessage);
-
-  // Keep last 50 messages per repo
-  if (history.length > 50) {
-    history.splice(0, history.length - 50);
-  }
-
-  saveChatHistory(repoId, history);
 }
 
 // ─── Bubble renderers (pure render — no side-effects on storage) ──────────────
@@ -232,26 +408,45 @@ function renderErrorBubble(container, msg) {
 // ─── Shared fetch helper ──────────────────────────────────────────────────────
 
 async function askApi(payload) {
-  const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
-  const provider = localStorage.getItem(LS_AI_PROVIDER) || "openai";
-  const model = (localStorage.getItem(LS_AI_MODEL) || "").trim();
+  try {
+    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
+    const provider = localStorage.getItem(LS_AI_PROVIDER) || "openai";
+    const model = (localStorage.getItem(LS_AI_MODEL) || "").trim();
 
-  const headers = { "Content-Type": "application/json" };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const enhancedPayload = {
-    ...payload,
-    ...(provider && { provider }),
-    ...(model && { model }),
-    ...(payload.type && { type: payload.type }),
-  };
+    const enhancedPayload = {
+      ...payload,
+      ...(provider && { provider }),
+      ...(model && { model }),
+      ...(payload.type && { type: payload.type }),
+    };
 
-  const res = await fetch("/api/ask", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(enhancedPayload),
-  });
-  return res.json();
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(enhancedPayload),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error("API request failed:", error);
+    
+    // Return a consistent error structure
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      return { error: "Network error. Please check your connection." };
+    } else if (error.message.includes('HTTP')) {
+      return { error: error.message };
+    } else {
+      return { error: "Request failed. Please try again." };
+    }
+  }
 }
 
 // ─── Generic ask handler ──────────────────────────────────────────────────────
@@ -276,42 +471,80 @@ export async function handleAsk({
   // 1. Render user message (persist only on successful response)
   renderUserBubble(messagesEl, questionText);
   if (repoId) {
-    persistChatMessage(repoId, {
-      type: "user",
-      text: questionText,
-      // Don't persist questionId yet - wait for successful response
-    });
+    try {
+      await persistChatMessage(repoId, {
+        type: "user",
+        text: questionText,
+        // Don't persist questionId yet - wait for successful response
+      });
+    } catch (error) {
+      console.warn("Failed to persist user message:", error);
+    }
   }
 
-  // 2. Check in-memory answer cache
-  if (answerCache.has(cacheKey)) {
-    const cachedAnswer = answerCache.get(cacheKey);
-    renderAnswerBubble(messagesEl, cachedAnswer, true, bgClass);
+  // 2. Check in-memory answer cache (use appropriate cache based on repoId)
+  const isWordcloudChat = repoId && repoId.startsWith('wordcloud_');
+  const cache = isWordcloudChat ? wordcloudAnswerCache : answerCache;
+  
+  if (cache.has(cacheKey)) {
+    const cachedEntry = cache.get(cacheKey);
+    const cachedAnswer = cachedEntry.answer || cachedEntry; // Handle both formats
+    const isCached = cachedEntry.isCached !== undefined ? cachedEntry.isCached : true;
+    
+    // Update access time for LRU
+    if (isWordcloudChat) {
+      cache.set(cacheKey, { answer: cachedAnswer, accessTime: Date.now(), isCached });
+    } else {
+      cache.set(cacheKey, cachedAnswer); // Regular cache doesn't track time yet
+    }
+    
+    renderAnswerBubble(messagesEl, cachedAnswer, isCached, bgClass);
     if (repoId) {
-      persistChatMessage(repoId, {
-        type: "assistant",
-        text: cachedAnswer,
-        isCached: true,
-      });
-      // Update user message with questionId for chip questions (successful response)
-      if (questionId) {
-        const history = getChatHistory(repoId);
-        const updatedHistory = [...history]; // Create copy to avoid race condition
-        const lastMessage = updatedHistory[updatedHistory.length - 1];
-        if (
-          lastMessage &&
-          lastMessage.type === "user" &&
-          lastMessage.text === questionText
-        ) {
-          lastMessage.questionId = questionId;
-          saveChatHistory(repoId, updatedHistory);
+      try {
+        const persistFn = isWordcloudChat 
+          ? (feedKind, msg) => persistWordcloudChatMessage(feedKind, msg)
+          : persistChatMessage;
+        
+        const persistKey = isWordcloudChat ? repoId.replace('wordcloud_', '') : repoId;
+        
+        await persistFn(persistKey, {
+          type: "assistant",
+          text: cachedAnswer,
+          isCached: true,
+        });
+        
+        // Update user message with questionId for chip questions (successful response)
+        if (questionId) {
+          const storageKey = isWordcloudChat ? `wordcloud_${persistKey}` : repoId;
+          await withLocalStorageLock(storageKey, async () => {
+            const history = isWordcloudChat 
+              ? getWordcloudChatHistory(persistKey)
+              : getChatHistory(repoId);
+            const updatedHistory = [...history]; // Create copy to avoid race condition
+            const lastMessage = updatedHistory[updatedHistory.length - 1];
+            if (
+              lastMessage &&
+              lastMessage.type === "user" &&
+              lastMessage.text === questionText
+            ) {
+              lastMessage.questionId = questionId;
+              localStorage.setItem(storageKey, JSON.stringify(updatedHistory));
+            }
+          });
         }
+      } catch (error) {
+        console.warn("Failed to persist cache hit:", error);
       }
     }
     if (chipBtn) {
       disableChip(chipBtn);
     }
-    maintainCacheSize(); // Maintain cache size limit for cache hits
+    // Maintain appropriate cache size limit
+    if (isWordcloudChat) {
+      maintainWordcloudCacheSize();
+    } else {
+      maintainCacheSize();
+    }
     return;
   }
 
@@ -331,7 +564,17 @@ export async function handleAsk({
       // 4a. API returned an error
       renderErrorBubble(messagesEl, data.error);
       if (repoId) {
-        persistChatMessage(repoId, { type: "error", text: data.error });
+        try {
+          const persistFn = isWordcloudChat 
+            ? (feedKind, msg) => persistWordcloudChatMessage(feedKind, msg)
+            : persistChatMessage;
+          
+          const persistKey = isWordcloudChat ? repoId.replace('wordcloud_', '') : repoId;
+          
+          await persistFn(persistKey, { type: "error", text: data.error });
+        } catch (error) {
+          console.warn("Failed to persist error message:", error);
+        }
       }
       // Re-enable chip so user can retry
       if (chipBtn) {
@@ -345,28 +588,60 @@ export async function handleAsk({
     }
 
     // 4b. Success
-    answerCache.set(cacheKey, data.answer);
-    maintainCacheSize(); // Maintain cache size limit
+    const targetCache = isWordcloudChat ? wordcloudAnswerCache : answerCache;
+    if (isWordcloudChat) {
+      targetCache.set(cacheKey, { 
+        answer: data.answer, 
+        accessTime: Date.now(), 
+        isCached: !!data.isCached 
+      });
+    } else {
+      targetCache.set(cacheKey, data.answer);
+    }
+    
+    // Maintain appropriate cache size limit
+    if (isWordcloudChat) {
+      maintainWordcloudCacheSize();
+    } else {
+      maintainCacheSize();
+    }
+    
     renderAnswerBubble(messagesEl, data.answer, data.isCached, bgClass);
     if (repoId) {
-      persistChatMessage(repoId, {
-        type: "assistant",
-        text: data.answer,
-        isCached: !!data.isCached,
-      });
-      // Update user message with questionId for chip questions (successful response)
-      if (questionId) {
-        const history = getChatHistory(repoId);
-        const updatedHistory = [...history]; // Create copy to avoid race condition
-        const lastMessage = updatedHistory[updatedHistory.length - 1];
-        if (
-          lastMessage &&
-          lastMessage.type === "user" &&
-          lastMessage.text === questionText
-        ) {
-          lastMessage.questionId = questionId;
-          saveChatHistory(repoId, updatedHistory);
+      try {
+        const persistFn = isWordcloudChat 
+          ? (feedKind, msg) => persistWordcloudChatMessage(feedKind, msg)
+          : persistChatMessage;
+        
+        const persistKey = isWordcloudChat ? repoId.replace('wordcloud_', '') : repoId;
+        
+        await persistFn(persistKey, {
+          type: "assistant",
+          text: data.answer,
+          isCached: !!data.isCached,
+        });
+        
+        // Update user message with questionId for chip questions (successful response)
+        if (questionId) {
+          const storageKey = isWordcloudChat ? `wordcloud_${persistKey}` : repoId;
+          await withLocalStorageLock(storageKey, async () => {
+            const history = isWordcloudChat 
+              ? getWordcloudChatHistory(persistKey)
+              : getChatHistory(repoId);
+            const updatedHistory = [...history]; // Create copy to avoid race condition
+            const lastMessage = updatedHistory[updatedHistory.length - 1];
+            if (
+              lastMessage &&
+              lastMessage.type === "user" &&
+              lastMessage.text === questionText
+            ) {
+              lastMessage.questionId = questionId;
+              localStorage.setItem(storageKey, JSON.stringify(updatedHistory));
+            }
+          });
         }
+      } catch (error) {
+        console.warn("Failed to persist success response:", error);
       }
     }
     if (chipBtn) {
@@ -377,7 +652,17 @@ export async function handleAsk({
     const errMsg = err.message || "Network error";
     renderErrorBubble(messagesEl, errMsg);
     if (repoId) {
-      persistChatMessage(repoId, { type: "error", text: errMsg });
+      try {
+        const persistFn = isWordcloudChat 
+          ? (feedKind, msg) => persistWordcloudChatMessage(feedKind, msg)
+          : persistChatMessage;
+        
+        const persistKey = isWordcloudChat ? repoId.replace('wordcloud_', '') : repoId;
+        
+        await persistFn(persistKey, { type: "error", text: errMsg });
+      } catch (error) {
+        console.warn("Failed to persist error message:", error);
+      }
     }
     // Re-enable chip so user can retry
     if (chipBtn) {
@@ -610,14 +895,14 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
   // Clean up existing event listeners to prevent memory leaks
   cleanupWordcloudChatEvents();
 
-  // Clear previous chips and messages when period changes
+  // Clear previous chips but load persisted messages for current period
   chipsEl.innerHTML = "";
   messagesEl.innerHTML = "";
 
   const questions =
     state.currentLang === "vi" ? WC_CHAT_QUESTIONS_VI : WC_CHAT_QUESTIONS_EN;
 
-  // Render chip buttons
+  // Render chip buttons FIRST
   chipsEl.innerHTML = questions
     .map(
       (q) =>
@@ -627,6 +912,47 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
     )
     .join("");
 
+  // Load and render persisted chat history for this WordCloud period
+  const wcHistory = getWordcloudChatHistory(feedKind);
+  if (wcHistory.length > 0) {
+    // Build the set of answered question IDs from history
+    const answeredQuestionIds = new Set();
+    wcHistory.forEach((msg) => {
+      if (msg.type === "user" && msg.questionId) {
+        answeredQuestionIds.add(msg.questionId);
+      }
+    });
+
+    // Render messages first
+    wcHistory.forEach((msg) => {
+      try {
+        switch (msg.type) {
+          case "user":
+            if (msg.text) renderUserBubble(messagesEl, msg.text);
+            break;
+          case "assistant":
+            if (msg.text) {
+              renderAnswerBubble(messagesEl, msg.text, !!msg.isCached, "bg-appBg");
+            }
+            break;
+          case "error":
+            if (msg.text) renderErrorBubble(messagesEl, msg.text);
+            break;
+        }
+      } catch (error) {
+        console.warn("Error displaying WordCloud chat message:", error, msg);
+      }
+    });
+    
+    // THEN update chip states based on answered questions
+    chipsEl.querySelectorAll(".wc-chat-chip").forEach((btn) => {
+      const qId = btn.dataset.wcqid;
+      if (qId && answeredQuestionIds.has(qId)) {
+        disableChip(btn);
+      }
+    });
+  }
+
   chipsEl.querySelectorAll(".wc-chat-chip").forEach((btn) => {
     const q = questions.find((x) => x.id === btn.dataset.wcqid);
     if (!q) return;
@@ -635,7 +961,7 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
       if (btn.disabled) return;
       handleAsk({
         questionText: q.question,
-        cacheKey: `wc_${feedKind}_${safeEncode(q.question)}_${state.currentLang}`,
+        cacheKey: generateWordcloudCacheKey(feedKind, q.question, state.currentLang),
         payload: {
           repoId: `wordcloud_${feedKind}`,
           question: q.question,
@@ -646,6 +972,8 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
         chipBtn: btn,
         messagesEl,
         bgClass: "bg-appBg",
+        repoId: `wordcloud_${feedKind}`,
+        questionId: q.id,
       });
     });
   });
@@ -667,7 +995,7 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
     newInput.value = "";
     handleAsk({
       questionText: text,
-      cacheKey: `wc_${feedKind}_${safeEncode(text)}_${state.currentLang}`,
+      cacheKey: generateWordcloudCacheKey(feedKind, text, state.currentLang),
       payload: {
         repoId: `wordcloud_${feedKind}`,
         question: text,
@@ -678,6 +1006,7 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
       chipBtn: null,
       messagesEl,
       bgClass: "bg-appBg",
+      repoId: `wordcloud_${feedKind}`,
     });
   };
 
@@ -689,6 +1018,16 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
     }
   });
 }
+
+// Export WordCloud cache utilities for external use
+export {
+  clearWordcloudCache,
+  getWordcloudCacheStats,
+  getWordcloudChatHistory,
+  persistWordcloudChatMessage,
+  generateWordcloudCacheKey,
+  wordcloudAnswerCache,
+};
 
 // Store event cleanup functions
 let wordcloudChatCleanup = null;
