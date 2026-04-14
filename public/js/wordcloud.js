@@ -60,6 +60,7 @@ export function showWordCloudView() {
   readerWorkspace.classList.add("hidden");
   wordcloudView.classList.remove("hidden");
   readerPane.classList.remove("hidden");
+  readerPane.classList.add("flex");
 
   // Sync WordCloud period with current feed period
   updateCurrentWordcloudPeriod(state.feedKind);

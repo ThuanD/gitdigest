@@ -277,11 +277,9 @@ dom.wordcloudBtn.addEventListener("click", async () => {
     showWordCloudView();
     await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
     
-    // Handle mobile display
+    // Hide feed on mobile (reader overlay takes full width)
     if (window.innerWidth < MOBILE_BREAKPOINT) {
       dom.feedPane.classList.add("hidden");
-      dom.readerPane.classList.remove("hidden");
-      dom.readerPane.classList.add("flex");
     }
   } catch (error) {
     console.error("Failed to load WordCloud:", error);
@@ -423,10 +421,10 @@ async function handleCardClick(repo, cardElement) {
   state.currentActiveRepo = repo;
   cardElement.classList.add("is-active");
 
+  dom.readerPane.classList.remove("hidden");
+  dom.readerPane.classList.add("flex");
   if (window.innerWidth < MOBILE_BREAKPOINT) {
     dom.feedPane.classList.add("hidden");
-    dom.readerPane.classList.remove("hidden");
-    dom.readerPane.classList.add("flex");
   }
 
   dom.emptyState.classList.add("hidden");
