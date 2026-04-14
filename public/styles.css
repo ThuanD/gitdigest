@@ -104,6 +104,9 @@ body {
     opacity 0.2s ease,
     box-shadow 0.2s ease,
     transform 0.2s ease;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
 }
 .repo-card:hover {
   box-shadow:

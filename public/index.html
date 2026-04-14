@@ -287,10 +287,10 @@
       </header>
 
       <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
-        <div class="w-full max-w-[1400px] mx-auto px-4 md:px-6 lg:px-8 pt-5 flex-1 flex flex-col min-h-0">
+        <div class="w-full max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 xl:px-10 pt-5 flex-1 flex flex-col min-h-0">
           <div
             id="feedList"
-            class="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 content-start"
+            class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 md:gap-4 content-start"
           ></div>
           <div
             id="loadMoreFooter"
@@ -318,7 +318,7 @@
     ></div>
     <main
       id="readerPane"
-      class="fixed top-12 bottom-0 right-0 w-full md:w-[78%] lg:w-[72%] xl:w-[1180px] max-w-full bg-surface hidden flex-col overflow-hidden z-40 border-l border-borderSubtle shadow-[-24px_0_64px_-30px_rgba(0,0,0,0.75)]"
+      class="fixed top-12 bottom-0 right-0 w-full md:w-[75%] lg:w-[70%] xl:w-[65%] 2xl:w-[60%] max-w-[1400px] bg-surface hidden flex-col overflow-hidden z-40 border-l border-borderSubtle shadow-[-24px_0_64px_-30px_rgba(0,0,0,0.75)]"
     >
       <!-- WordCloud View -->
       <div
@@ -895,60 +895,5 @@
     </dialog>
 
     <script type="module" src="/js/main.js"></script>
-    <script>
-      // Reader overlay: sync backdrop with readerPane visibility; close on backdrop click + ESC
-      (function () {
-        const reader = document.getElementById("readerPane");
-        const backdrop = document.getElementById("readerBackdrop");
-        const backBtn = document.getElementById("mobileBackBtn");
-        if (!reader || !backdrop || !backBtn) return;
-
-        const isOpen = () => !reader.classList.contains("hidden");
-        const sync = () => {
-          if (isOpen()) {
-            backdrop.classList.remove("hidden");
-            reader.classList.add("animate-reader-in");
-          } else {
-            backdrop.classList.add("hidden");
-            reader.classList.remove("animate-reader-in");
-          }
-        };
-        new MutationObserver(sync).observe(reader, {
-          attributes: true,
-          attributeFilter: ["class"],
-        });
-        sync();
-
-        backdrop.addEventListener("click", () => backBtn.click());
-        document.addEventListener("keydown", (e) => {
-          if (e.key === "Escape" && isOpen()) backBtn.click();
-        });
-
-        // Navbar tab active-state sync (Trends ↔ Wordcloud)
-        const trendsBtn = document.getElementById("navTrendsBtn");
-        const wordcloudBtn = document.getElementById("wordcloudBtn");
-        const wordcloudView = document.getElementById("wordcloudView");
-        const setTab = (active) => {
-          [trendsBtn, wordcloudBtn].forEach((b) => {
-            if (!b) return;
-            const on = b === active;
-            b.classList.toggle("feed-kind-active", on);
-            b.setAttribute("aria-pressed", on ? "true" : "false");
-          });
-        };
-        trendsBtn?.addEventListener("click", () => {
-          if (isOpen()) backBtn.click();
-          setTab(trendsBtn);
-        });
-        wordcloudBtn?.addEventListener("click", () => setTab(wordcloudBtn));
-        // Reflect wordcloud view state
-        if (wordcloudView) {
-          new MutationObserver(() => {
-            if (!wordcloudView.classList.contains("hidden")) setTab(wordcloudBtn);
-            else if (!isOpen()) setTab(trendsBtn);
-          }).observe(wordcloudView, { attributes: true, attributeFilter: ["class"] });
-        }
-      })();
-    </script>
-  </body>
+      </body>
 </html>
