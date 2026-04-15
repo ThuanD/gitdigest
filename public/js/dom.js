@@ -76,7 +76,6 @@ export const wordcloudStatus = q("wordcloudStatus");
 export const wordcloudCategories = q("wordcloudCategories");
 export const wordcloudInsights = q("wordcloudInsights");
 export const wordcloudTrends = q("wordcloudTrends");
-export const wordcloudMobileBackBtn = q("wordcloudMobileBackBtn");
 export const wordcloudPeriodDaily = q("wordcloudPeriodDaily");
 export const wordcloudPeriodWeekly = q("wordcloudPeriodWeekly");
 export const wordcloudPeriodMonthly = q("wordcloudPeriodMonthly");

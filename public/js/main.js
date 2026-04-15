@@ -341,41 +341,35 @@ dom.readerViewSourceBtn.addEventListener("click", () => {
   }
 });
 
-// ─── Mobile back ──────────────────────────────────────────────────────────────
+// ─── Mobile back (button only visible on mobile) ──────────────────────────────
 dom.mobileBackBtn.addEventListener("click", () => {
   closeCommentsPanelLocal(false);
-  if (window.innerWidth < MOBILE_BREAKPOINT) {
-    dom.feedPane.classList.remove("hidden");
-    dom.readerPane.classList.add("max-md:hidden");
-  }
-  // Return to wordcloud default on desktop
-  dom.readerWorkspace.classList.add("hidden");
-  dom.readerWorkspace.classList.remove("flex");
-  dom.wordcloudView.classList.remove("hidden");
-  dom.emptyState.classList.add("hidden");
-  // Clear active card
+  // Return to feed list (Trends mode)
+  dom.feedPane.classList.remove("hidden");
+  dom.readerPane.classList.add("max-md:hidden");
+  // Clear active card so reader doesn't auto-restore on next interaction
   if (state.activeCardId) {
     const old = document.getElementById(`card-${state.activeCardId}`);
     if (old) old.classList.remove("is-active");
     state.activeCardId = null;
     state.currentActiveRepo = null;
   }
-  syncNavTabs("wordcloud");
+  syncNavTabs("reader");
 });
 
 // ─── Wordcloud ────────────────────────────────────────────────────────────────
 dom.wordcloudBtn.addEventListener("click", async () => {
   try {
-    showWordCloudView();
-    syncNavTabs("wordcloud");
-    playPaneEnter(dom.wordcloudView);
-    await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
-    
-    // Hide feed on mobile (reader pane takes full width)
+    // Swap mobile panes first so the wordcloud area shows immediately,
+    // then load data (showing skeleton/spinner inside it).
     if (window.innerWidth < MOBILE_BREAKPOINT) {
       dom.feedPane.classList.add("hidden");
       dom.readerPane.classList.remove("max-md:hidden");
     }
+    showWordCloudView();
+    syncNavTabs("wordcloud");
+    playPaneEnter(dom.wordcloudView);
+    await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
   } catch (error) {
     console.error("Failed to load WordCloud:", error);
     // Show error status to user
@@ -609,23 +603,28 @@ const _savedMode = (() => {
 })();
 const _initialMode = _savedMode === "reader" ? "reader" : "wordcloud";
 
-if (_initialMode === "reader" && window.innerWidth >= MOBILE_BREAKPOINT) {
-  // Show empty state — no active repo on fresh load
+if (_initialMode === "reader") {
+  // Mobile: just show feed list (default mobile view). Desktop: show empty state on right.
   dom.wordcloudView.classList.add("hidden");
   dom.readerWorkspace.classList.add("hidden");
-  dom.emptyState.classList.remove("hidden");
-  dom.emptyState.classList.add("flex");
+  if (window.innerWidth >= MOBILE_BREAKPOINT) {
+    dom.emptyState.classList.remove("hidden");
+    dom.emptyState.classList.add("flex");
+  }
   syncNavTabs("reader");
 } else {
   syncNavTabs("wordcloud");
-  if (window.innerWidth >= MOBILE_BREAKPOINT) {
-    (async () => {
-      try {
-        showWordCloudView();
-        await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
-      } catch (err) {
-        console.error("Initial wordcloud load failed:", err);
+  (async () => {
+    try {
+      // On mobile, swap panes so wordcloud takes full screen
+      if (window.innerWidth < MOBILE_BREAKPOINT) {
+        dom.feedPane.classList.add("hidden");
+        dom.readerPane.classList.remove("max-md:hidden");
       }
-    })();
-  }
+      showWordCloudView();
+      await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
+    } catch (err) {
+      console.error("Initial wordcloud load failed:", err);
+    }
+  })();
 }

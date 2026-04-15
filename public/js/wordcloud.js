@@ -22,7 +22,6 @@ import {
   wordcloudContent,
   readerPane,
   feedPane,
-  wordcloudMobileBackBtn,
   wordcloudPeriodDaily,
   wordcloudPeriodWeekly,
   wordcloudPeriodMonthly,
@@ -593,18 +592,3 @@ if (wordcloudPeriodMonthly) {
   );
 }
 
-// Mobile: back button hides wordcloud view and restores feed visibility
-if (wordcloudMobileBackBtn) {
-  wordcloudMobileBackBtn.addEventListener("click", () => {
-    hideWordCloudView();
-    // Also hide the readerPane on mobile so the feed pane is visible again
-    if (readerPane) {
-      readerPane.classList.add("hidden");
-      readerPane.classList.remove("flex");
-    }
-    // Show feed pane again
-    if (feedPane) {
-      feedPane.classList.remove("hidden");
-    }
-  });
-}
