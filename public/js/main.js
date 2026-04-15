@@ -23,6 +23,7 @@ import {
   setCommentsOpenPref,
 } from "./storage.js";
 import { createDropdown } from "./dropdown.js";
+import { setStatusHtml } from "./utils.js";
 
 // Mobile breakpoint constant
 const MOBILE_BREAKPOINT = 768;
@@ -112,6 +113,13 @@ createDropdown(dom.langDropdown, {
 // ─── Nav tab sync (right-pane state: "wordcloud" | "reader") ─────────────────
 const LS_NAV_MODE = "gitdigest_nav_mode_v1";
 
+function playPaneEnter(el) {
+  if (!el) return;
+  el.classList.remove("pane-enter");
+  void el.offsetWidth;
+  el.classList.add("pane-enter");
+}
+
 function syncNavTabs(mode) {
   const wordcloudActive = mode === "wordcloud";
   dom.navTrendsBtn.classList.toggle("feed-kind-active", !wordcloudActive);
@@ -144,6 +152,7 @@ dom.navTrendsBtn.addEventListener("click", () => {
   dom.readerWorkspace.classList.remove("flex");
   dom.emptyState.classList.remove("hidden");
   dom.emptyState.classList.add("flex");
+  playPaneEnter(dom.emptyState);
 
   if (window.innerWidth < MOBILE_BREAKPOINT) {
     // Mobile: focus on feed list
@@ -220,12 +229,25 @@ function syncClearBtnState() {
   dom.wordcloudClearBtn.disabled = !anyFilter;
 }
 
+function playWaterFlow(btn) {
+  if (!btn) return;
+  btn.classList.remove("is-flowing");
+  void btn.offsetWidth;
+  btn.classList.add("is-flowing");
+  btn.addEventListener(
+    "animationend",
+    () => btn.classList.remove("is-flowing"),
+    { once: true },
+  );
+}
+
 // ─── Hide-read toggle ─────────────────────────────────────────────────────────
 dom.hideReadToggle.addEventListener("click", () => {
   state.hideReadActive = !state.hideReadActive;
   document.body.classList.toggle("hide-read-active", state.hideReadActive);
   dom.hideReadToggle.classList.toggle("filter-btn-active", state.hideReadActive);
   dom.hideReadToggle.setAttribute("aria-pressed", String(state.hideReadActive));
+  if (state.hideReadActive) playWaterFlow(dom.hideReadToggle);
   syncClearBtnState();
 });
 
@@ -235,6 +257,7 @@ dom.favOnlyToggle.addEventListener("click", () => {
   document.body.classList.toggle("fav-only-active", state.favOnlyActive);
   dom.favOnlyToggle.classList.toggle("filter-btn-fav-active", state.favOnlyActive);
   dom.favOnlyToggle.setAttribute("aria-pressed", String(state.favOnlyActive));
+  if (state.favOnlyActive) playWaterFlow(dom.favOnlyToggle);
   syncClearBtnState();
 });
 
@@ -264,6 +287,9 @@ function openCommentsPanelLocal(repo, persist) {
   if (!repo) return;
   dom.commentsPane.classList.remove("hidden");
   dom.commentsPane.classList.add("flex");
+  dom.commentsPane.classList.remove("chat-pane-anim");
+  void dom.commentsPane.offsetWidth;
+  dom.commentsPane.classList.add("chat-pane-anim");
   if (window.innerWidth < 768) dom.commentsBackdrop.classList.remove("hidden");
   loadChatContent(repo, dom.commentsBody);
   if (persist) setCommentsOpenPref(true);
@@ -342,6 +368,7 @@ dom.wordcloudBtn.addEventListener("click", async () => {
   try {
     showWordCloudView();
     syncNavTabs("wordcloud");
+    playPaneEnter(dom.wordcloudView);
     await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
     
     // Hide feed on mobile (reader pane takes full width)
@@ -358,7 +385,7 @@ dom.wordcloudBtn.addEventListener("click", async () => {
     // Optionally show error in WordCloud status
     const wordcloudStatus = document.getElementById("wordcloudStatus");
     if (wordcloudStatus) {
-      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
+      setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`);
     }
   }
 });
@@ -518,6 +545,7 @@ async function handleCardClick(repo, cardElement) {
   dom.readerWorkspace.classList.add("flex");
   dom.readerContent.classList.remove("hidden");
   dom.readerContent.classList.add("flex", "flex-col");
+  playPaneEnter(dom.readerWorkspace);
 
   getCommentsOpenPref()
     ? openCommentsPanelLocal(repo, false)
@@ -529,7 +557,7 @@ async function handleCardClick(repo, cardElement) {
   dom.readerTitle.textContent = repo.title;
   dom.readerBody.innerHTML = "";
   if (dom.readerStatus) {
-    dom.readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
+    setStatusHtml(dom.readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`);
   }
   document.getElementById("readerChat")?.remove();
 

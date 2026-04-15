@@ -1,7 +1,7 @@
 import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL, SPINNER_SVG, ERROR_MAP } from "./constants.js";
 import { state } from "./state.js";
 import { readerStatus, readerBody, openSettingsBtn } from "./dom.js";
-import { markdownToSafeHtml, applyBlankTargets } from "./utils.js";
+import { markdownToSafeHtml, applyBlankTargets, setStatusHtml } from "./utils.js";
 import { markAsRead } from "./storage.js";
 
 export function readerSummarySkeletonHTML() {
@@ -36,7 +36,7 @@ export function renderSummaryError(errorCode, rawMessage) {
       <h3 class="text-lg font-medium text-textMain mb-2">${def.title}</h3>
       <p class="text-textMuted text-sm max-w-md">${def.hint}</p>
     </div>`;
-  readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${def.statusColor} shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.statusText}</span></span>`;
+  setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${def.statusColor} shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.statusText}</span></span>`);
 
   if (def.action === "settings") openSettingsBtn.click();
 }
@@ -46,7 +46,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
   const cached = localStorage.getItem(cacheKey);
 
   if (cached) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${summaryStatusLangSuffix()}</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${summaryStatusLangSuffix()}</span></span>`);
     readerBody.innerHTML = markdownToSafeHtml(cached);
     applyBlankTargets(readerBody);
     readerBody.classList.remove("hidden");
@@ -59,7 +59,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
   readerBody.classList.remove("hidden");
   readerBody.classList.add("opacity-50");
   readerBody.innerHTML = readerSummarySkeletonHTML();
-  readerStatus.innerHTML = `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating</span></span>`;
+  setStatusHtml(readerStatus, `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating</span></span>`);
 
   try {
     const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
@@ -101,7 +101,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
       : `Generated${summaryStatusLangSuffix()}`;
     const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
 
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusLabel}</span></span>`);
     readerBody.classList.remove("opacity-50");
     readerBody.innerHTML = markdownToSafeHtml(summary);
     applyBlankTargets(readerBody);

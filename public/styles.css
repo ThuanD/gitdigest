@@ -102,9 +102,19 @@ body {
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease,
-    opacity 0.15s ease;
+    opacity 0.15s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease;
   display: flex;
   flex-direction: column;
+}
+.repo-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -12px rgba(139, 92, 246, 0.35);
+}
+.repo-card:active {
+  transform: translateY(0);
+  transition-duration: 0.05s;
 }
 .repo-card::before {
   content: "";
@@ -159,13 +169,97 @@ body.fav-only-active .repo-card:not(.is-fav) {
 /* Favorite star button */
 .fav-btn {
   color: #52525b;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 .fav-btn:hover {
   color: #fbbf24;
+  transform: scale(1.15);
+}
+.fav-btn.is-popping {
+  animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); }
+  100% { transform: scale(1); }
 }
 .repo-card.is-fav .fav-btn {
   color: #fbbf24;
+}
+
+/* Filter buttons tactile press + water-flow activation */
+.filter-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s ease;
+}
+.filter-btn > * {
+  position: relative;
+  z-index: 1;
+}
+.filter-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(139, 92, 246, 0.45) 30%,
+    rgba(34, 211, 238, 0.45) 60%,
+    transparent 100%
+  );
+  transform: translateX(-110%);
+  pointer-events: none;
+  z-index: 0;
+}
+.filter-btn.is-flowing::after {
+  animation: water-flow 0.7s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+.filter-btn-fav-active.is-flowing::after {
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(251, 191, 36, 0.45) 30%,
+    rgba(244, 114, 182, 0.4) 60%,
+    transparent 100%
+  );
+}
+@keyframes water-flow {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(110%); }
+}
+.filter-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+/* Status pill text crossfade */
+.status-fade {
+  transition: opacity 0.15s ease;
+}
+.status-fade.is-fading {
+  opacity: 0;
+}
+
+/* Right-pane view swap */
+.pane-enter {
+  animation: paneIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes paneIn {
+  0% { opacity: 0; transform: translateX(8px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Wordcloud canvas fade */
+#wordcloudCanvas {
+  transition: opacity 0.4s ease;
+}
+#wordcloudCanvas.is-appearing {
+  opacity: 0;
 }
 
 /* ── Feed kind buttons ───────────────────────────────────────────────────── */
@@ -317,6 +411,27 @@ select {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(8px);
+  animation: dialog-backdrop-in 0.22s ease-out;
+}
+dialog[open] {
+  animation: dialog-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes dialog-in {
+  0% { opacity: 0; transform: scale(0.94) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes dialog-backdrop-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ── Chat panel slide-in ─────────────────────────────────────────────────── */
+.chat-pane-anim {
+  animation: chat-slide-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes chat-slide-in {
+  0% { opacity: 0; transform: translateX(40px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 /* ── Skeleton loader ─────────────────────────────────────────────────────── */

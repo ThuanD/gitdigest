@@ -117,6 +117,12 @@ export function renderReposFromIds(repos, page = 1, onCardClick) {
         favBtn.setAttribute("aria-pressed", String(nowFav));
         const svg = favBtn.querySelector("svg");
         if (svg) svg.setAttribute("fill", nowFav ? "currentColor" : "none");
+        if (nowFav) {
+          favBtn.classList.remove("is-popping");
+          void favBtn.offsetWidth;
+          favBtn.classList.add("is-popping");
+          favBtn.addEventListener("animationend", () => favBtn.classList.remove("is-popping"), { once: true });
+        }
         return;
       }
       onCardClick(repo, card);
@@ -144,9 +150,15 @@ export async function loadReposClient(page = 1, feedKind, onCardClick) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    feedList
-      .querySelectorAll("[data-feed-skeleton]")
-      .forEach((el) => el.remove());
+    const skeletons = feedList.querySelectorAll("[data-feed-skeleton]");
+    if (skeletons.length) {
+      skeletons.forEach((el) => {
+        el.style.transition = "opacity 0.15s ease";
+        el.style.opacity = "0";
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      skeletons.forEach((el) => el.remove());
+    }
     renderReposFromIds(data.repos || [], page, onCardClick);
 
     if (data.hasMore) {

@@ -1,5 +1,5 @@
 import { MD_SANITIZE } from "./constants.js";
-import { resolveReadmeImages } from "./utils.js";
+import { resolveReadmeImages, setStatusHtml } from "./utils.js";
 import { sourceFramePanel, readerSourceIframeWrap, readerBody, readerStatus } from "./dom.js";
 
 const README_CACHE_TTL = 30 * 60 * 1000;
@@ -86,7 +86,7 @@ function renderReadmeContent(data, repo) {
   
   // Update status to show source loaded
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span><span class="uppercase tracking-wider">Loaded</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span><span class="uppercase tracking-wider">Loaded</span></span>`);
   }
 }
 
@@ -121,7 +121,7 @@ function renderReadmeError(err, repo) {
     
   // Update status to show error
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`);
   }
 }
 
@@ -154,7 +154,7 @@ export function closeSourcePanel(persist, deps) {
   
   // Reset status to loading for summary view
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`);
   }
 }
 
@@ -178,7 +178,7 @@ export async function openSourcePanel(repo, persist, deps) {
 
   // Set loading status only if not cached
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
+    setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`);
   }
 
   // Loading state

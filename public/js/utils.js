@@ -1,5 +1,19 @@
 import { MD_SANITIZE } from "./constants.js";
 
+/**
+ * Crossfade-swap innerHTML on a status-pill element.
+ * Assumes the element has `.status-fade` class (CSS transition on opacity).
+ */
+export function setStatusHtml(el, html) {
+  if (!el) return;
+  if (el.innerHTML === html) return;
+  el.classList.add("is-fading");
+  setTimeout(() => {
+    el.innerHTML = html;
+    el.classList.remove("is-fading");
+  }, 120);
+}
+
 export function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")

@@ -34,7 +34,7 @@ import {
   closeWordcloudChatBtn,
   wordcloudBackdrop,
 } from "./dom.js";
-import { escapeHtml, getWordcloudCache, setWordcloudCache } from "./utils.js";
+import { escapeHtml, getWordcloudCache, setWordcloudCache, setStatusHtml } from "./utils.js";
 import { initWordcloudChat, renderWordcloudChatError } from "./chat.js";
 import { renderReposFromIds } from "./feed.js";
 import { getCommentsOpenPref, setCommentsOpenPref } from "./storage.js";
@@ -103,7 +103,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
       const cachedData = getWordcloudCache(feedKind, state.currentLang);
       if (cachedData) {
         if (wordcloudStatus) {
-          wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${wordcloudStatusLangSuffix()}</span></span>`;
+          setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${wordcloudStatusLangSuffix()}</span></span>`);
         }
         renderWordCloud(cachedData.words);
         renderWordCloudInsights(cachedData, feedKind);
@@ -124,7 +124,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     wordcloudLoading.classList.remove("hidden");
     wordcloudLoading.classList.add("flex");
     if (wordcloudStatus) {
-      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Analyzing</span></span>`;
+      setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Analyzing</span></span>`);
     }
 
     // Get configuration with safe defaults
@@ -211,7 +211,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
       const statusText = data.isCached
         ? `Cached${wordcloudStatusLangSuffix()}`
         : `Generated${wordcloudStatusLangSuffix()}`;
-      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusText}</span></span>`;
+      setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusText}</span></span>`);
     }
     renderWordCloud(data.words);
     renderWordCloudInsights(data, feedKind);
@@ -269,7 +269,7 @@ function renderWordCloudError(errorCode, rawMessage) {
     hint: rawMessage || "Unknown error.",
   };
   if (wordcloudStatus) {
-    wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.title}</span></span>`;
+    setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.title}</span></span>`);
   }
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
@@ -316,6 +316,8 @@ function renderWordCloud(words) {
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
   wordcloudCanvas.style.display = "block";
+  wordcloudCanvas.classList.add("is-appearing");
+  requestAnimationFrame(() => wordcloudCanvas.classList.remove("is-appearing"));
 
   const container = wordcloudCanvas.parentElement;
   wordcloudCanvas.width = Math.max(container.clientWidth - 32, 300);
@@ -465,6 +467,13 @@ export function toggleWordcloudChat() {
   wordcloudChatBtn.setAttribute("aria-pressed", isHidden ? "true" : "false");
   wordcloudChatBtn.classList.toggle("feed-kind-active", isHidden);
 
+  // Slide-in animation when opening
+  if (isHidden) {
+    wordcloudChatPane.classList.remove("chat-pane-anim");
+    void wordcloudChatPane.offsetWidth;
+    wordcloudChatPane.classList.add("chat-pane-anim");
+  }
+
   // Handle backdrop for mobile - only show on mobile when opening
   if (!isHidden && window.innerWidth < MOBILE_BREAKPOINT) {
     wordcloudBackdrop.classList.remove("hidden");
@@ -562,7 +571,7 @@ function handleWordcloudPeriodChange(period) {
   } catch (error) {
     // Reset status on error
     if (wordcloudStatus) {
-      wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
+      setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`);
     }
   }
 }
