@@ -887,24 +887,22 @@ export function loadChatContent(repo, container) {
 export function renderWordcloudChatError(title, hint) {
   const messagesEl = document.getElementById("wordcloudChatMessages");
   const chipsEl = document.getElementById("wordcloudChatChips");
-  const inputEl = document.getElementById("wordcloudChatInput");
-  const sendBtn = document.getElementById("wordcloudChatSendBtn");
+  const formEl = document.getElementById("wordcloudChatForm");
   if (!messagesEl) return;
 
   cleanupWordcloudChatEvents();
 
+  // Hide chips + input bar so only the centered placeholder shows — matches
+  // the repo chat "Generate a summary first" locked pattern.
   if (chipsEl) chipsEl.innerHTML = "";
-  messagesEl.innerHTML = `
-    <div class="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
-      <p class="text-sm text-textMuted mb-1">${escapeHtml(title)}</p>
-      <p class="text-xs text-textMuted/60">${escapeHtml(hint)}</p>
-    </div>`;
+  if (formEl) formEl.classList.add("hidden");
 
-  if (inputEl) {
-    inputEl.disabled = true;
-    inputEl.placeholder = "Chat unavailable";
-  }
-  if (sendBtn) sendBtn.disabled = true;
+  // Make messages area own the full height and center the placeholder.
+  messagesEl.className =
+    "flex-1 min-h-0 flex flex-col items-center justify-center px-6 py-12 text-center";
+  messagesEl.innerHTML = `
+    <p class="text-sm text-textMuted mb-1">${escapeHtml(title)}</p>
+    <p class="text-xs text-textMuted/60">${escapeHtml(hint)}</p>`;
 }
 
 export function initWordcloudChat(feedKind, wordcloudContextText) {
@@ -917,6 +915,12 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
 
   // Clean up existing event listeners to prevent memory leaks
   cleanupWordcloudChatEvents();
+
+  // Restore form visibility + normal messages layout (may have been hidden
+  // by an earlier error state).
+  const formEl = document.getElementById("wordcloudChatForm");
+  if (formEl) formEl.classList.remove("hidden");
+  messagesEl.className = "flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3";
 
   // Clear previous chips but load persisted messages for current period
   chipsEl.innerHTML = "";
@@ -1038,8 +1042,12 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
     });
   };
 
-  newSend.addEventListener("click", doSend);
+  newSend.addEventListener("click", () => {
+    if (newSend.disabled || newInput.disabled) return;
+    doSend();
+  });
   newInput.addEventListener("keydown", (e) => {
+    if (newInput.disabled || newSend.disabled) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       doSend();

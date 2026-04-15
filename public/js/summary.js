@@ -36,7 +36,7 @@ export function renderSummaryError(errorCode, rawMessage) {
       <h3 class="text-lg font-medium text-textMain mb-2">${def.title}</h3>
       <p class="text-textMuted text-sm max-w-md">${def.hint}</p>
     </div>`;
-  setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${def.statusColor} shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.statusText}</span></span>`);
+  setStatusHtml(readerStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${def.statusColor} shrink-0"></span><span class="uppercase tracking-wider">${def.statusText}</span></span>`);
 
   if (def.action === "settings") openSettingsBtn.click();
 }

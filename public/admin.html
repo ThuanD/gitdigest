@@ -36,13 +36,13 @@
               mono: ['"Geist Mono"', "monospace"],
             },
             colors: {
-              appBg: "#09090b",
-              surface: "#18181b",
-              surfaceHover: "#27272a",
-              borderSubtle: "#27272a",
-              borderHover: "#3f3f46",
-              textMain: "#e4e4e7",
-              textMuted: "#a1a1aa",
+              appBg: "rgb(var(--appBg) / <alpha-value>)",
+              surface: "rgb(var(--surface) / <alpha-value>)",
+              surfaceHover: "rgb(var(--surfaceHover) / <alpha-value>)",
+              borderSubtle: "rgb(var(--borderSubtle) / <alpha-value>)",
+              borderHover: "rgb(var(--borderHover) / <alpha-value>)",
+              textMain: "rgb(var(--textMain) / <alpha-value>)",
+              textMuted: "rgb(var(--textMuted) / <alpha-value>)",
               hn: "#8b5cf6",
             },
             animation: {
@@ -57,6 +57,17 @@
       };
     </script>
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("gitdigest_theme");
+          var theme = saved === "light" || saved === "dark"
+            ? saved
+            : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) { /* noop */ }
+      })();
+    </script>
     <style>
       body {
         overflow: auto !important;

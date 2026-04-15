@@ -15,17 +15,97 @@
   font-display: swap;
 }
 
+/* ── Theme tokens (space-separated RGB for tailwind <alpha-value>) ──────── */
+:root {
+  --appBg: 9 9 11;
+  --surface: 24 24 27;
+  --surfaceHover: 39 39 42;
+  --borderSubtle: 39 39 42;
+  --borderHover: 63 63 70;
+  --textMain: 228 228 231;
+  --textMuted: 161 161 170;
+  --scrollbarThumb: 63 63 70;
+  --scrollbarThumbHover: 82 82 91;
+  --proseBody: 161 161 170;
+  --proseStrong: 228 228 231;
+  --bgGlowViolet: rgba(139, 92, 246, 0.08);
+  --bgGlowCyan: rgba(34, 211, 238, 0.05);
+  --shimmer: rgba(228, 228, 231, 0.07);
+  --skeletonBg: rgba(39, 39, 42, 0.9);
+  --tooltipBg: #18181b;
+  --tooltipBorder: #3f3f46;
+  --dropdownBg: #18181b;
+  --dropdownBorder: #27272a;
+  --dropdownItemHoverBg: #27272a;
+  /* README (Shadow DOM) tokens */
+  --readmeBg: #0c0c0e;
+  --readmeText: #d4d4d8;
+  --readmeHeading: #ffffff;
+  --readmeCodeBg: #27272a;
+  --readmeCodeColor: #fbbf24;
+  --readmePreBg: #18181b;
+  --readmePreBorder: #27272a;
+  --readmeLink: #60a5fa;
+  --readmeLinkHover: #93c5fd;
+  --readmeBlockquoteBg: #18181b;
+  --readmeBlockquoteBorder: #3f3f46;
+  --readmeBlockquoteText: #a1a1aa;
+  --readmeTableBorder: #27272a;
+  --readmeTableHeaderBg: #27272a;
+  --readmeMuted: #71717a;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --appBg: 255 255 255;
+  --surface: 250 250 250;
+  --surfaceHover: 244 244 245;
+  --borderSubtle: 228 228 231;
+  --borderHover: 212 212 216;
+  --textMain: 24 24 27;
+  --textMuted: 82 82 91;
+  --scrollbarThumb: 212 212 216;
+  --scrollbarThumbHover: 161 161 170;
+  --proseBody: 82 82 91;
+  --proseStrong: 24 24 27;
+  --bgGlowViolet: rgba(139, 92, 246, 0.1);
+  --bgGlowCyan: rgba(34, 211, 238, 0.08);
+  --shimmer: rgba(0, 0, 0, 0.05);
+  --skeletonBg: rgba(244, 244, 245, 0.9);
+  --tooltipBg: #ffffff;
+  --tooltipBorder: #d4d4d8;
+  --dropdownBg: #ffffff;
+  --dropdownBorder: #e4e4e7;
+  --dropdownItemHoverBg: #f4f4f5;
+  /* README (Shadow DOM) tokens — light */
+  --readmeBg: #ffffff;
+  --readmeText: #3f3f46;
+  --readmeHeading: #18181b;
+  --readmeCodeBg: #f4f4f5;
+  --readmeCodeColor: #b45309;
+  --readmePreBg: #f4f4f5;
+  --readmePreBorder: #e4e4e7;
+  --readmeLink: #7c3aed;
+  --readmeLinkHover: #5b21b6;
+  --readmeBlockquoteBg: #fafafa;
+  --readmeBlockquoteBorder: #a78bfa;
+  --readmeBlockquoteText: #52525b;
+  --readmeTableBorder: #e4e4e7;
+  --readmeTableHeaderBg: #f4f4f5;
+  --readmeMuted: #71717a;
+  color-scheme: light;
+}
+
 body {
-  background-color: #09090b;
+  background-color: rgb(var(--appBg));
   background-image:
     radial-gradient(
       ellipse 900px 500px at 85% -10%,
-      rgba(139, 92, 246, 0.08),
+      var(--bgGlowViolet),
       transparent 60%
     ),
     radial-gradient(
       ellipse 700px 400px at 10% 110%,
-      rgba(34, 211, 238, 0.05),
+      var(--bgGlowCyan),
       transparent 55%
     );
   overflow: hidden;
@@ -37,22 +117,22 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: rgb(var(--scrollbarThumb));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: rgb(var(--scrollbarThumbHover));
 }
 
 /* ── Prose (summary content) ─────────────────────────────────────────────── */
 .prose {
-  color: #a1a1aa;
+  color: rgb(var(--proseBody));
   font-family: "Geist Sans", sans-serif;
   line-height: 1.75;
   font-size: 0.9375rem;
 }
 .prose strong {
-  color: #e4e4e7;
+  color: rgb(var(--proseStrong));
   font-weight: 500;
 }
 .prose h1,
@@ -61,7 +141,7 @@ body {
 .prose h4,
 .prose h5,
 .prose h6 {
-  color: #e4e4e7;
+  color: rgb(var(--proseStrong));
   font-weight: 500;
   letter-spacing: -0.02em;
   margin-top: 0;
@@ -84,7 +164,7 @@ body {
   border-radius: 0.5rem;
   margin-top: 1.5em;
   margin-bottom: 1.5em;
-  border: 1px solid #27272a;
+  border: 1px solid rgb(var(--borderSubtle));
 }
 .prose iframe {
   width: 100%;
@@ -92,8 +172,8 @@ body {
   border-radius: 0.5rem;
   margin-top: 1.5em;
   margin-bottom: 1.5em;
-  border: 1px solid #27272a;
-  background: #09090b;
+  border: 1px solid rgb(var(--borderSubtle));
+  background: rgb(var(--appBg));
 }
 
 /* ── Repo cards (list row) ──────────────────────────────────────────────── */
@@ -134,13 +214,13 @@ body {
 }
 .repo-card.is-read {
   opacity: 0.72;
-  background-color: rgba(24, 24, 27, 0.85);
+  background-color: rgb(var(--surface) / 0.85);
 }
 .repo-card.is-read:hover {
   opacity: 1;
 }
 .is-active {
-  background-color: #1f1f23 !important;
+  background-color: rgb(var(--surfaceHover)) !important;
   border-color: rgba(139, 92, 246, 0.35) !important;
   opacity: 1 !important;
 }
@@ -158,17 +238,17 @@ body.fav-only-active .repo-card:not(.is-fav) {
 .filter-btn-active {
   background-color: rgba(139, 92, 246, 0.12) !important;
   border-color: rgba(139, 92, 246, 0.45) !important;
-  color: #e4e4e7 !important;
+  color: rgb(var(--textMain)) !important;
 }
 .filter-btn-fav-active {
   background-color: rgba(251, 191, 36, 0.12) !important;
   border-color: rgba(251, 191, 36, 0.45) !important;
-  color: #fbbf24 !important;
+  color: #f59e0b !important;
 }
 
 /* Favorite star button */
 .fav-btn {
-  color: #52525b;
+  color: rgb(var(--textMuted) / 0.6);
   transition: color 0.15s ease, transform 0.15s ease;
 }
 .fav-btn:hover {
@@ -264,15 +344,15 @@ body.fav-only-active .repo-card:not(.is-fav) {
 
 /* ── Feed kind buttons ───────────────────────────────────────────────────── */
 .feed-kind-btn {
-  color: #71717a;
+  color: rgb(var(--textMuted) / 0.8);
   position: relative;
 }
 .feed-kind-btn:hover {
-  color: #e4e4e7;
+  color: rgb(var(--textMain));
 }
 .feed-kind-btn.feed-kind-active {
-  background-color: #27272a;
-  color: #e4e4e7;
+  background-color: rgb(var(--surfaceHover));
+  color: rgb(var(--textMain));
   box-shadow:
     0 1px 0 rgba(0, 0, 0, 0.2),
     inset 0 0 0 1px rgba(139, 92, 246, 0.25);
@@ -292,8 +372,8 @@ select {
   transition: transform 0.15s ease;
 }
 .ui-dropdown-menu {
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--dropdownBg);
+  border: 1px solid var(--dropdownBorder);
   border-radius: 0.5rem;
   padding: 0.25rem;
   box-shadow:
@@ -317,7 +397,7 @@ select {
   text-align: left;
   padding: 0.4rem 0.625rem;
   font-size: 0.8125rem;
-  color: #a1a1aa;
+  color: rgb(var(--textMuted));
   border-radius: 0.375rem;
   background: transparent;
   border: none;
@@ -326,11 +406,11 @@ select {
   transition: background-color 0.1s ease, color 0.1s ease;
 }
 .ui-dropdown-menu [data-dropdown-item]:hover {
-  background: #27272a;
-  color: #e4e4e7;
+  background: var(--dropdownItemHoverBg);
+  color: rgb(var(--textMain));
 }
 .ui-dropdown-menu [data-dropdown-item].is-selected {
-  color: #e4e4e7;
+  color: rgb(var(--textMain));
 }
 .ui-dropdown-menu [data-dropdown-item].is-selected::after {
   content: "";
@@ -354,7 +434,7 @@ select {
   transition: transform 0.1s ease, outline 0.1s ease;
 }
 .activity-grid > div:hover {
-  outline: 1px solid rgba(228, 228, 231, 0.5);
+  outline: 1px solid rgb(var(--textMain) / 0.5);
   outline-offset: 1px;
 }
 
@@ -364,7 +444,7 @@ select {
   gap: 3px;
   font-size: 9px;
   font-family: "Geist Mono", ui-monospace, monospace;
-  color: #52525b;
+  color: rgb(var(--textMuted) / 0.7);
   width: 22px;
   align-items: center;
   line-height: 9px;
@@ -380,7 +460,7 @@ select {
   margin-left: 28px; /* day col 22px + flex gap 6px */
   font-size: 9px;
   font-family: "Geist Mono", ui-monospace, monospace;
-  color: #71717a;
+  color: rgb(var(--textMuted) / 0.8);
   position: relative;
 }
 .activity-months > span {
@@ -392,9 +472,9 @@ select {
 .activity-tooltip {
   position: fixed;
   pointer-events: none;
-  background: #18181b;
-  border: 1px solid #3f3f46;
-  color: #e4e4e7;
+  background: var(--tooltipBg);
+  border: 1px solid var(--tooltipBorder);
+  color: rgb(var(--textMain));
   font-size: 10px;
   font-family: "Geist Mono", ui-monospace, monospace;
   padding: 4px 8px;
@@ -443,7 +523,7 @@ dialog[open] {
 .ui-skeleton {
   position: relative;
   overflow: hidden;
-  background: rgba(39, 39, 42, 0.9);
+  background: var(--skeletonBg);
   border-radius: 0.375rem;
 }
 .ui-skeleton::after {
@@ -454,7 +534,7 @@ dialog[open] {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(228, 228, 231, 0.07),
+    var(--shimmer),
     transparent
   );
   animation: ui-shimmer 1.15s ease-in-out infinite;
@@ -473,7 +553,7 @@ dialog[open] {
   margin-top: 0.4rem;
   font-size: 0.6875rem;
   font-family: "Geist Mono", ui-monospace, monospace;
-  color: #52525b;
+  color: rgb(var(--textMuted) / 0.6);
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
@@ -482,16 +562,16 @@ dialog[open] {
   letter-spacing: 0.01em;
 }
 .reader-title-source-link:hover {
-  color: #a1a1aa;
+  color: rgb(var(--textMuted));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 /* ── README source panel ─────────────────────────────────────────────────── */
 .reader-source-panel {
-  border: 1px solid #27272a;
+  border: 1px solid rgb(var(--borderSubtle));
   border-radius: 0.75rem;
-  background: #0c0c0e;
+  background: rgb(var(--appBg));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -502,7 +582,7 @@ dialog[open] {
   width: 100%;
   flex: 1;
   min-height: min(82vh, 900px);
-  background: #09090b;
+  background: rgb(var(--appBg));
 }
 .reader-source-iframe-wrap.hidden {
   display: none;
@@ -523,7 +603,7 @@ dialog[open] {
 }
 .chat-chip:not(:disabled):hover {
   border-color: rgba(139, 92, 246, 0.55);
-  color: #e4e4e7;
+  color: rgb(var(--textMain));
 }
 .chat-chip:disabled {
   cursor: not-allowed;

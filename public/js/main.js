@@ -24,6 +24,10 @@ import {
 } from "./storage.js";
 import { createDropdown } from "./dropdown.js";
 import { setStatusHtml } from "./utils.js";
+import { initTheme } from "./theme.js";
+
+// Initialize theme (reads data-theme already set by the pre-hydrate script).
+initTheme(dom.themeToggleBtn);
 
 // Mobile breakpoint constant
 const MOBILE_BREAKPOINT = 768;

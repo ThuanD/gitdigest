@@ -2,6 +2,9 @@
 
 const q = (id) => document.getElementById(id);
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+export const themeToggleBtn = q("themeToggleBtn");
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 export const settingsModal = q("settingsModal");
 export const openSettingsBtn = q("openSettingsBtn");

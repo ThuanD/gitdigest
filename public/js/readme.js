@@ -24,35 +24,35 @@ function getOrCreateShadowRoot(host) {
 // ─── Style factories ──────────────────────────────────────────────────────────
 function readmeStyles() {
   return `<style>
-    :host { display:block; color:#e4e4e7; font-family:'Geist Sans',sans-serif; line-height:1.7; font-size:0.9375rem; background:#0c0c0e; padding:1.5rem; box-sizing:border-box; }
-    h1,h2,h3,h4,h5,h6 { color:#fff !important; border-bottom-color:#27272a !important; font-weight:600; margin:1.5rem 0 0.75rem; padding-bottom:0.4rem; }
+    :host { display:block; color:var(--readmeText); font-family:'Geist Sans',sans-serif; line-height:1.7; font-size:0.9375rem; background:var(--readmeBg); padding:1.5rem; box-sizing:border-box; }
+    h1,h2,h3,h4,h5,h6 { color:var(--readmeHeading) !important; border-bottom-color:var(--readmePreBorder) !important; font-weight:600; margin:1.5rem 0 0.75rem; padding-bottom:0.4rem; }
     h1{font-size:1.4rem} h2{font-size:1.2rem} h3{font-size:1.05rem} h4{font-size:0.95rem}
-    p { color:#d4d4d8 !important; margin:0 0 1rem; }
-    a { color:#60a5fa !important; text-decoration:underline; } a:hover { color:#93c5fd !important; }
+    p { color:var(--readmeText) !important; margin:0 0 1rem; }
+    a { color:var(--readmeLink) !important; text-decoration:underline; } a:hover { color:var(--readmeLinkHover) !important; }
     a img[src*="shields.io"],a img[alt*="badge"]{ display:inline !important; vertical-align:middle !important; margin:0 2px !important; }
     div[align="center"],div[align="center"] p { text-align:center !important; }
     div[align="center"] a { display:inline !important; margin:0 2px !important; }
     div[align="center"] a img,div[align="center"] p a img,p>a>img[src*="shields.io"],p>a>img[src*="badge"],p>a>img[src*="camo.githubusercontent"] { display:inline !important; vertical-align:middle !important; max-width:none !important; border:none !important; border-radius:0 !important; margin:2px !important; }
-    code { font-family:'Geist Mono',monospace; font-size:0.8125rem; background-color:#27272a !important; color:#fbbf24 !important; padding:0.1rem 0.35rem; border-radius:0.25rem; }
-    pre { background-color:#18181b !important; border:1px solid #27272a !important; border-radius:0.5rem; padding:1rem; overflow-x:auto; margin:1rem 0; }
-    pre code { background:transparent !important; color:#e4e4e7 !important; padding:0; }
-    blockquote { border-left:3px solid #3f3f46 !important; margin:1rem 0; padding:0.75rem 1rem; background-color:#18181b !important; border-radius:0.375rem; color:#a1a1aa !important; }
-    table { border-collapse:collapse; width:100%; margin:1rem 0; border-color:#27272a !important; }
-    th,td { border:1px solid #27272a !important; padding:0.5rem 0.75rem; color:#d4d4d8 !important; }
-    th { background-color:#27272a !important; color:#fff !important; font-weight:600; }
-    hr { border:none; border-top:1px solid #27272a !important; margin:1.5rem 0; }
-    img { max-width:100%; border-radius:0.5rem; border:1px solid #27272a !important; margin:1rem 0; }
-    ul,ol { color:#d4d4d8 !important; padding-left:1.5rem; margin:0 0 1rem; }
+    code { font-family:'Geist Mono',monospace; font-size:0.8125rem; background-color:var(--readmeCodeBg) !important; color:var(--readmeCodeColor) !important; padding:0.1rem 0.35rem; border-radius:0.25rem; }
+    pre { background-color:var(--readmePreBg) !important; border:1px solid var(--readmePreBorder) !important; border-radius:0.5rem; padding:1rem; overflow-x:auto; margin:1rem 0; }
+    pre code { background:transparent !important; color:var(--readmeText) !important; padding:0; }
+    blockquote { border-left:3px solid var(--readmeBlockquoteBorder) !important; margin:1rem 0; padding:0.75rem 1rem; background-color:var(--readmeBlockquoteBg) !important; border-radius:0.375rem; color:var(--readmeBlockquoteText) !important; }
+    table { border-collapse:collapse; width:100%; margin:1rem 0; border-color:var(--readmeTableBorder) !important; }
+    th,td { border:1px solid var(--readmeTableBorder) !important; padding:0.5rem 0.75rem; color:var(--readmeText) !important; }
+    th { background-color:var(--readmeTableHeaderBg) !important; color:var(--readmeHeading) !important; font-weight:600; }
+    hr { border:none; border-top:1px solid var(--readmeTableBorder) !important; margin:1.5rem 0; }
+    img { max-width:100%; border-radius:0.5rem; border:1px solid var(--readmeTableBorder) !important; margin:1rem 0; }
+    ul,ol { color:var(--readmeText) !important; padding-left:1.5rem; margin:0 0 1rem; }
     li { margin-bottom:0.25rem; }
   </style>`;
 }
 
 function loadingStyles() {
-  return `<style>:host{display:flex;align-items:center;justify-content:center;min-height:100%;gap:0.75rem;padding:2rem;color:#71717a;font-family:'Geist Sans',sans-serif;background:#0c0c0e;box-sizing:border-box;}@keyframes spin{to{transform:rotate(360deg)}}.spinner{width:1rem;height:1rem;animation:spin 1s linear infinite;}</style>`;
+  return `<style>:host{display:flex;align-items:center;justify-content:center;min-height:100%;gap:0.75rem;padding:2rem;color:var(--readmeMuted);font-family:'Geist Sans',sans-serif;background:var(--readmeBg);box-sizing:border-box;}@keyframes spin{to{transform:rotate(360deg)}}.spinner{width:1rem;height:1rem;animation:spin 1s linear infinite;}</style>`;
 }
 
 function errorStyles() {
-  return `<style>:host{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;gap:1rem;text-align:center;color:#71717a;font-family:'Geist Sans',sans-serif;background:#0c0c0e;box-sizing:border-box;padding:2rem;} a{color:#ff8533;text-decoration:underline;} .error-text{font-size:0.875rem;} .error-detail{font-size:0.75rem;}</style>`;
+  return `<style>:host{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;gap:1rem;text-align:center;color:var(--readmeMuted);font-family:'Geist Sans',sans-serif;background:var(--readmeBg);box-sizing:border-box;padding:2rem;} a{color:var(--readmeLink);text-decoration:underline;} .error-text{font-size:0.875rem;} .error-detail{font-size:0.75rem;}</style>`;
 }
 
 // ─── Render helpers ───────────────────────────────────────────────────────────

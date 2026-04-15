@@ -268,7 +268,7 @@ function renderWordCloudError(errorCode, rawMessage) {
     hint: rawMessage || "Unknown error.",
   };
   if (wordcloudStatus) {
-    setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider text-[10px] leading-snug">${def.title}</span></span>`);
+    setStatusHtml(wordcloudStatus, `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">${def.title}</span></span>`);
   }
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
@@ -303,6 +303,28 @@ function clearWordCloudError() {
 }
 
 // ─── Canvas render ────────────────────────────────────────────────────────────
+const CATEGORY_COLORS_DARK = {
+  language: "#60a5fa",
+  framework: "#34d399",
+  domain: "#f59e0b",
+  concept: "#a78bfa",
+};
+const CATEGORY_COLORS_LIGHT = {
+  language: "#2563eb",
+  framework: "#059669",
+  domain: "#b45309",
+  concept: "#7c3aed",
+};
+function themeCategoryColors() {
+  return document.documentElement.getAttribute("data-theme") === "light"
+    ? CATEGORY_COLORS_LIGHT
+    : CATEGORY_COLORS_DARK;
+}
+function themeFallbackColor() {
+  return document.documentElement.getAttribute("data-theme") === "light"
+    ? "#18181b"
+    : "#e4e4e7";
+}
 const CATEGORY_COLORS = {
   language: "#60a5fa",
   framework: "#34d399",
@@ -310,7 +332,9 @@ const CATEGORY_COLORS = {
   concept: "#a78bfa",
 };
 
+let _lastWords = null;
 function renderWordCloud(words) {
+  _lastWords = words;
   clearWordCloudError();
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
@@ -322,20 +346,28 @@ function renderWordCloud(words) {
   wordcloudCanvas.width = Math.max(container.clientWidth - 32, 300);
   wordcloudCanvas.height = 400;
 
+  const palette = themeCategoryColors();
+  const fallback = themeFallbackColor();
   WordCloud(wordcloudCanvas, {
     list: words.map((w) => [w.text, w.size]),
     gridSize: Math.round(wordcloudCanvas.width / 60),
     weightFactor: Math.round(wordcloudCanvas.width / 150),
     fontFamily: '"Geist Sans", sans-serif',
     color: (word) =>
-      CATEGORY_COLORS[words.find((w) => w.text === word)?.category] ??
-      "#e4e4e7",
+      palette[words.find((w) => w.text === word)?.category] ?? fallback,
     rotateRatio: 0.3,
     rotationSteps: 2,
     backgroundColor: "transparent",
     click: (item) => {
       if (item?.[0]) handleWordCloudClick(item[0], wordcloudOnCardClick);
     },
+  });
+}
+
+// Re-paint wordcloud when theme changes (if we have data to render).
+if (typeof window !== "undefined") {
+  window.addEventListener("gitdigest:theme-change", () => {
+    if (_lastWords) renderWordCloud(_lastWords);
   });
 }
 

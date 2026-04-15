@@ -55,13 +55,13 @@
               mono: ['"Geist Mono"', "monospace"],
             },
             colors: {
-              appBg: "#09090b",
-              surface: "#18181b",
-              surfaceHover: "#27272a",
-              borderSubtle: "#27272a",
-              borderHover: "#3f3f46",
-              textMain: "#e4e4e7",
-              textMuted: "#a1a1aa",
+              appBg: "rgb(var(--appBg) / <alpha-value>)",
+              surface: "rgb(var(--surface) / <alpha-value>)",
+              surfaceHover: "rgb(var(--surfaceHover) / <alpha-value>)",
+              borderSubtle: "rgb(var(--borderSubtle) / <alpha-value>)",
+              borderHover: "rgb(var(--borderHover) / <alpha-value>)",
+              textMain: "rgb(var(--textMain) / <alpha-value>)",
+              textMuted: "rgb(var(--textMuted) / <alpha-value>)",
               hn: "#8b5cf6",
               brandFrom: "#8b5cf6",
               brandTo: "#22d3ee",
@@ -96,6 +96,19 @@
       };
     </script>
     <link rel="stylesheet" href="/styles.css" />
+
+    <!-- Apply theme before paint to avoid FOUC -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("gitdigest_theme");
+          var theme = saved === "light" || saved === "dark"
+            ? saved
+            : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) { /* noop */ }
+      })();
+    </script>
   </head>
   <body
     class="bg-appBg text-textMain font-sans h-screen flex flex-col antialiased selection:bg-hn selection:text-white"
@@ -170,6 +183,22 @@
         </div>
 
         <button
+          id="themeToggleBtn"
+          type="button"
+          class="text-textMuted hover:text-textMain transition-colors p-1.5 rounded hover:bg-surface"
+          title="Toggle theme"
+          aria-label="Toggle theme"
+        >
+          <svg data-theme-icon="dark" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+          <svg data-theme-icon="light" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <circle cx="12" cy="12" r="4" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+        </button>
+
+        <button
           id="openSettingsBtn"
           type="button"
           class="text-textMuted hover:text-white transition-colors p-1.5 rounded hover:bg-surface"
@@ -207,7 +236,7 @@
             >
           </div>
           <div
-            class="overflow-x-hidden bg-neutral-900/50 p-1.5 relative"
+            class="overflow-x-hidden bg-surface/40 p-1.5 relative rounded"
           >
             <div id="activityMonths" class="activity-months"></div>
             <div class="flex gap-1.5 mt-0.5">
@@ -333,13 +362,13 @@
           ></div>
           <div
             id="loadMoreFooter"
-            class="shrink-0 pb-6 pt-4 mt-2"
+            class="shrink-0 pt-2 pb-4"
           >
             <button
               id="loadMoreBtn"
               type="button"
               disabled
-              class="mx-auto block max-w-xs w-full bg-surface border border-borderSubtle text-textMuted hover:text-hn hover:border-hn/50 px-4 py-2.5 rounded-lg text-xs font-medium transition-all duration-300 disabled:opacity-60 disabled:hover:text-textMuted disabled:hover:border-borderSubtle shadow-sm inline-flex items-center justify-center gap-2"
+              class="w-full bg-surface border border-borderSubtle text-textMuted hover:text-hn hover:border-hn/50 px-4 py-2 rounded-lg text-xs font-medium transition-colors duration-200 disabled:opacity-60 disabled:hover:text-textMuted disabled:hover:border-borderSubtle inline-flex items-center justify-center gap-2"
             >
               Load More
             </button>
@@ -383,7 +412,7 @@
                   >
                     <div
                       id="wordcloudStatus"
-                      class="status-fade inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
+                      class="status-fade inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
                     >
                       Loading…
                     </div>
@@ -565,7 +594,7 @@
               ></div>
 
               <!-- Bottom bar: chips + input -->
-              <div class="shrink-0 border-t border-borderSubtle">
+              <div id="wordcloudChatForm" class="shrink-0 border-t border-borderSubtle">
                 <div
                   id="wordcloudChatChips"
                   class="px-3 pt-3 pb-2 flex flex-wrap gap-1.5"
@@ -576,12 +605,12 @@
                     type="text"
                     placeholder="Ask anything about trends…"
                     maxlength="300"
-                    class="flex-1 bg-appBg border border-borderSubtle rounded-lg px-3 py-2 text-xs text-textMain placeholder-textMuted/50 focus:outline-none focus:border-hn transition-colors font-mono"
+                    class="flex-1 bg-appBg border border-borderSubtle rounded-lg px-3 py-2 text-xs text-textMain placeholder-textMuted/50 focus:outline-none focus:border-hn transition-colors font-mono disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface"
                   />
                   <button
                     id="wordcloudChatSendBtn"
                     type="button"
-                    class="shrink-0 px-3 py-2 bg-hn/10 border border-hn/30 hover:bg-hn/20 rounded-lg text-[11px] text-hn font-mono transition-colors"
+                    class="shrink-0 px-3 py-2 bg-hn/10 border border-hn/30 hover:bg-hn/20 rounded-lg text-[11px] text-hn font-mono transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-hn/10"
                   >
                     Send
                   </button>
@@ -678,7 +707,7 @@
                   >
                     <div
                       id="readerStatus"
-                      class="status-fade inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
+                      class="status-fade inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
                     >
                       Loading…
                     </div>
@@ -906,7 +935,7 @@
         <button
           id="saveKeyBtn"
           type="button"
-          class="px-4 py-2 rounded-lg text-sm bg-textMain text-black hover:bg-white font-medium transition-colors"
+          class="px-4 py-2 rounded-lg text-sm bg-hn text-white hover:bg-violet-600 font-medium transition-colors"
         >
           Save
         </button>
