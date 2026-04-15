@@ -54,7 +54,17 @@
    npx wrangler login
    ```
 
-3. (Optional) For local `npm run dev`, create `.dev.vars` in the project root (do not commit it):
+3. Create the KV namespace for the shared cache layer:
+
+   ```bash
+   npx wrangler kv namespace create gitdigest_cache
+   ```
+
+   Paste the returned `id` into `wrangler.jsonc` under `kv_namespaces[].id` (replacing the placeholder). The binding name must stay `CACHE_KV` — that's what the worker reads via `env.CACHE_KV`.
+
+   Local dev (`npm run dev`) uses miniflare's in-memory KV simulation, so no preview namespace is needed. If you want to hit the real KV from dev, run `npm run dev -- --remote`.
+
+4. (Optional) For local `npm run dev`, create `.dev.vars` in the project root (do not commit it):
 
    ```bash
    API_KEY=sk-...        # or gsk_... for Groq, sk-or-... for OpenRouter, or AIza... for Gemini
@@ -69,7 +79,7 @@
 
    **Note**: `GITHUB_TOKEN` is **required** for production to avoid rate limits (60 requests/hour unauthenticated vs 5,000 requests/hour authenticated).
 
-4. Run locally (Worker + static assets):
+5. Run locally (Worker + static assets):
 
    ```bash
    npm run dev
@@ -77,7 +87,7 @@
 
    Wrangler prints the local URL (often `http://localhost:8787`).
 
-5. Set up GitHub API token (required for production):
+6. Set up GitHub API token (required for production):
 
    ```bash
    npx wrangler secret put GITHUB_TOKEN
@@ -85,12 +95,12 @@
    # Scopes needed: public_repo (read-only access to public repositories)
    ```
 
-6. (Optional) Set default API keys and models on the deployed Worker:
+7. (Optional) Set default API keys and models on the deployed Worker:
 
    ```bash
    # Default AI API key
    npx wrangler secret put API_KEY
-   
+
    # Optional: Custom AI models
    npx wrangler secret put OPENAI_MODEL
    npx wrangler secret put GROQ_MODEL
@@ -98,7 +108,7 @@
    npx wrangler secret put GEMINI_MODEL
    ```
 
-7. Deploy:
+8. Deploy:
 
    ```bash
    npm run deploy
@@ -131,31 +141,46 @@ Send `Authorization: Bearer <API key>` header or set `API_KEY` secret.
 
 - **Frontend**: Modular JavaScript with ES modules (`public/js/`)
 - **Backend**: TypeScript with Cloudflare Workers (`src/`)
-- **Caching**: LRU and TTL cache implementations
+- **Caching**: Hybrid L1 (in-memory Map per isolate) + L2 (Cloudflare KV) — shared across isolates, survives redeploy
 - **Security**: Input validation, rate limiting, and abuse prevention
 - **AI**: Multi-provider support with configurable models
 
 ## Configuration
 
+### Bindings
+
+| Binding | Kind | Purpose |
+|---------|------|---------|
+| `CACHE_KV` | KV Namespace | L2 cache shared across isolates (summaries, Q&A, wordcloud, repo, trending) |
+| `RATE_LIMIT_KV` | KV Namespace | IP-based rate limit counters (optional) |
+| `ASSETS` | Static assets | `public/` served via Workers Assets |
+
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_KEY` | - | OpenAI API key |
+| `API_KEY` | - | Default AI API key fallback (stored via `wrangler secret put`) |
 | `GITHUB_TOKEN` | - | GitHub Personal Access Token |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | OpenRouter model |
 | `GEMINI_MODEL` | `gemini-2.0-flash-lite` | Gemini model |
-| `RATE_LIMIT_KV` | - | KV namespace for rate limiting |
 
 ### Cache Configuration
 
-- **Trending Lists**: 30 minutes TTL, 50 entries
-- **Summaries**: 500 entries max
-- **Repository Details**: 200 entries max
-- **Word Cloud**: 30 minutes TTL, 100 entries max
-- **Ask Q&A**: 1000 entries max
+Every cache runs as a `HybridCache<T>` — L1 (per-isolate `Map`, LRU-evicted) backed by L2 (KV) for cross-isolate sharing.
+
+| Cache | L1 max | TTL | KV prefix |
+|-------|-------:|-----|-----------|
+| Trending lists | 50 | 30 min | `trending:` |
+| Repository details | 200 | 30 min | `repo:` |
+| Summaries | 500 | 24 h | `summary:` |
+| Ask Q&A | 1000 | 6 h | `ask:` |
+| Word cloud | 100 | 30 min | `wc:` |
+
+KV writes are non-blocking via `ctx.waitUntil()` so response latency isn't affected. On a cold isolate the first read that hits L2 warms up L1 in ~10-30 ms — no need to re-call upstream APIs.
+
+If `CACHE_KV` isn't bound (e.g. during a quick test), caches transparently degrade to L1-only (in-memory per isolate).
 
 ## Security
 

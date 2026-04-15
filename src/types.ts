@@ -5,6 +5,7 @@ export interface Env {
   GITHUB_TOKEN?: string;
   ASSETS: { fetch: (req: Request) => Promise<Response> };
   RATE_LIMIT_KV?: KVNamespace;
+  CACHE_KV?: KVNamespace;
   
   // AI Model Configuration
   OPENAI_MODEL?: string;

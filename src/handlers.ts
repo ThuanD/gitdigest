@@ -1,5 +1,4 @@
 import type { Env, WordCloudData } from "./types";
-import { LRUCache, TTLCache } from "./cache";
 import {
   json,
   resolveClientApiKey,
@@ -11,7 +10,6 @@ import {
   fetchGitHubRepo,
   fetchTrendingRepos,
   fetchAndRenderReadme,
-  repoCache,
 } from "./github";
 import {
   callAI,
@@ -20,12 +18,7 @@ import {
   buildTranslationPrompt,
 } from "./ai";
 import { extractBasicKeywords } from "./keywords";
-
-// ─── Cache Instances ──────────────────────────────────────────────────────────
-
-export const summaryCache = new LRUCache<string>(500);
-export const askCache = new LRUCache<string>(1000);
-export const wordcloudCache = new TTLCache<WordCloudData>(100, 30 * 60 * 1000);
+import { getCaches } from "./caches";
 
 // ─── /api/repos ───────────────────────────────────────────────────────────────
 
@@ -33,6 +26,7 @@ export async function handleRepos(
   request: Request,
   url: URL,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
     const period = (url.searchParams.get("period") ?? "daily") as
@@ -46,7 +40,7 @@ export async function handleRepos(
     );
     const limit = 15;
 
-    const repos = await fetchTrendingRepos(period, language, env);
+    const repos = await fetchTrendingRepos(period, language, env, ctx);
     const start = (page - 1) * limit;
     const pageRepos = repos.slice(start, start + limit);
 
@@ -67,12 +61,13 @@ export async function handleRepoDetails(
   request: Request,
   url: URL,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
     const repoId = url.searchParams.get("repoId");
     if (!repoId) return json({ error: "Missing repository ID" }, 400);
 
-    const { repo, isCached } = await fetchGitHubRepo(repoId, env);
+    const { repo, isCached } = await fetchGitHubRepo(repoId, env, ctx);
     const { readmeContent, readmeHtml } = await fetchAndRenderReadme(repo, env);
 
     return json({
@@ -146,8 +141,10 @@ export async function handleSummarize(
   request: Request,
   url: URL,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
+    const caches = getCaches(env);
     // Rate limiting check
     const rateLimit = await checkRateLimit(env, request, 'summarize', 5, 3600);
     if (!rateLimit.allowed && rateLimit.error) {
@@ -179,16 +176,16 @@ export async function handleSummarize(
     const cacheKey = `${repoId}_${lang}`;
 
     // 1. Exact cache hit
-    const cached = summaryCache.get(cacheKey);
+    const cached = await caches.summary.get(cacheKey);
     if (cached) return json({ summary: cached, isCached: true });
 
     // 2. Translate from the opposite language if available
     const oppositeLang = lang === "en" ? "vi" : "en";
-    const oppositeSummary = summaryCache.get(`${repoId}_${oppositeLang}`);
+    const oppositeSummary = await caches.summary.get(`${repoId}_${oppositeLang}`);
     if (oppositeSummary) {
       const translated = await translateText(oppositeSummary, lang, env);
       if (translated) {
-        summaryCache.set(cacheKey, translated);
+        await caches.summary.set(cacheKey, translated, ctx);
         return json({
           summary: translated,
           isTranslated: true,
@@ -207,8 +204,8 @@ export async function handleSummarize(
       ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
     };
 
-    const summary = await generateSummary(repoId, lang, apiKey, enhancedEnv, effectiveProvider);
-    summaryCache.set(cacheKey, summary);
+    const summary = await generateSummary(repoId, lang, apiKey, enhancedEnv, effectiveProvider, ctx);
+    await caches.summary.set(cacheKey, summary, ctx);
     return json({ summary, isGenerated: true });
   } catch (error) {
     return errorResponse(error);
@@ -221,8 +218,10 @@ export async function handleAsk(
   request: Request,
   url: URL,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
+    const caches = getCaches(env);
     // Rate limiting check
     const rateLimit = await checkRateLimit(env, request, 'ask', 10, 3600);
     if (!rateLimit.allowed && rateLimit.error) {
@@ -275,11 +274,14 @@ export async function handleAsk(
     }
 
     // Check if repository exists in cache or has valid summary
-    const repoExists = repoCache.has(repoId) || 
-                      summaryCache.has(`${repoId}_${lang}`) || 
-                      summaryCache.has(`${repoId}_en`) ||
+    const [hasRepo, hasSummaryLang, hasSummaryEn] = await Promise.all([
+      caches.repo.has(repoId),
+      caches.summary.has(`${repoId}_${lang}`),
+      caches.summary.has(`${repoId}_en`),
+    ]);
+    const repoExists = hasRepo || hasSummaryLang || hasSummaryEn ||
                       (typeof clientSummary === "string" && clientSummary.length > 0);
-    
+
     if (!repoExists) {
       return json({ error: "Repository not found or no summary available", errorCode: "not_found" }, 404);
     }
@@ -309,7 +311,7 @@ export async function handleAsk(
       question: cleanQuestion,
       lang: lang
     });
-    const cached = askCache.get(cacheKey);
+    const cached = await caches.ask.get(cacheKey);
     if (cached) return json({ answer: cached, isCached: true });
 
     const clientKey = resolveClientApiKey(request);
@@ -324,8 +326,8 @@ export async function handleAsk(
 
     // Resolve summary from server cache or client-supplied fallback
     const summary =
-      summaryCache.get(`${repoId}_${lang}`) ??
-      summaryCache.get(`${repoId}_en`) ??
+      (await caches.summary.get(`${repoId}_${lang}`)) ??
+      (await caches.summary.get(`${repoId}_en`)) ??
       clientSummary;
 
     if (!summary) {
@@ -370,7 +372,7 @@ ${summary}`;
       enhancedEnv,
       effectiveProvider,
     );
-    askCache.set(cacheKey, answer);
+    await caches.ask.set(cacheKey, answer, ctx);
     return json({ answer, isCached: false });
   } catch (error) {
     return errorResponse(error);
@@ -383,8 +385,10 @@ export async function handleWordCloud(
   request: Request,
   url: URL,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   try {
+    const caches = getCaches(env);
     // Rate limiting check
     const rateLimit = await checkRateLimit(env, request, 'wordcloud', 20, 3600);
     if (!rateLimit.allowed && rateLimit.error) {
@@ -400,16 +404,16 @@ export async function handleWordCloud(
     const cacheKey = `${period}-${language}`;
 
     // 1. TTL cache hit
-    const cached = wordcloudCache.get(cacheKey);
+    const cached = await caches.wordcloud.get(cacheKey);
     if (cached) return json({ ...cached, isCached: true });
 
     // 2. Translate from opposite language
     const oppositeLang = language === "vi" ? "en" : "vi";
-    const oppositeData = wordcloudCache.get(`${period}-${oppositeLang}`);
+    const oppositeData = await caches.wordcloud.get(`${period}-${oppositeLang}`);
     if (oppositeData) {
       const translated = await translateWordCloud(oppositeData, language, env);
       if (translated) {
-        wordcloudCache.set(cacheKey, translated);
+        await caches.wordcloud.set(cacheKey, translated, ctx);
         return json({
           ...translated,
           isTranslated: true,
@@ -419,7 +423,7 @@ export async function handleWordCloud(
     }
 
     // 3. Generate
-    const repos = await fetchTrendingRepos(period, "", env);
+    const repos = await fetchTrendingRepos(period, "", env, ctx);
     const clientKey = resolveClientApiKey(request);
     const apiKey = clientKey || (env.API_KEY ?? "").trim();
     // Only respect client-supplied provider hint when the client also supplied its own key.
@@ -428,7 +432,7 @@ export async function handleWordCloud(
 
     if (!apiKey) {
       const wordData = extractBasicKeywords(repos);
-      wordcloudCache.set(cacheKey, wordData);
+      await caches.wordcloud.set(cacheKey, wordData, ctx);
       return json({ ...wordData, isGenerated: true });
     }
 
@@ -474,7 +478,7 @@ export async function handleWordCloud(
       wordData = extractBasicKeywords(repos);
     }
 
-    wordcloudCache.set(cacheKey, wordData);
+    await caches.wordcloud.set(cacheKey, wordData, ctx);
     return json({ ...wordData, isGenerated: true });
   } catch (error) {
     return errorResponse(error);
@@ -489,8 +493,9 @@ async function generateSummary(
   apiKey: string,
   env: Env,
   providerHint?: string | null,
+  ctx?: ExecutionContext,
 ): Promise<string> {
-  const { repo } = await fetchGitHubRepo(repoId, env);
+  const { repo } = await fetchGitHubRepo(repoId, env, ctx);
   const { readmeContent } = await fetchAndRenderReadme(repo, env, true);
 
   const content = [

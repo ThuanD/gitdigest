@@ -1,13 +1,6 @@
 import type { Env, GitHubRepo, TrendingRepo } from "./types";
 import { NotFoundError, RateLimitError } from "./errors";
-import { TTLCache, LRUCache } from "./cache";
-
-// ─── Cache Instances ─────────────────────────────────────────────────────────
-
-const LIST_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
-export const trendingCache = new TTLCache<TrendingRepo[]>(50, LIST_CACHE_TTL);
-export const repoCache = new TTLCache<GitHubRepo>(200, LIST_CACHE_TTL);
+import { getCaches } from "./caches";
 
 // ─── Raw HTML Parsing ─────────────────────────────────────────────────────────
 
@@ -114,9 +107,11 @@ export async function fetchTrendingRepos(
   period: Period,
   language: string,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<TrendingRepo[]> {
   const cacheKey = `${period}-${language}`;
-  const cached = trendingCache.get(cacheKey);
+  const caches = getCaches(env);
+  const cached = await caches.trending.get(cacheKey);
   if (cached?.length) return cached;
 
   const url = `https://github.com/trending/${encodeURIComponent(language)}?since=${period}`;
@@ -134,7 +129,7 @@ export async function fetchTrendingRepos(
     throw new Error("Parsed 0 repos — GitHub HTML structure may have changed");
   }
 
-  trendingCache.set(cacheKey, repos);
+  await caches.trending.set(cacheKey, repos, ctx);
   return repos;
 }
 
@@ -159,8 +154,10 @@ function mapGitHubRepoResponse(raw: Record<string, any>): GitHubRepo {
 export async function fetchGitHubRepo(
   repoId: string,
   env: Env,
+  ctx?: ExecutionContext,
 ): Promise<{ repo: GitHubRepo; isCached: boolean }> {
-  const cached = repoCache.get(repoId);
+  const caches = getCaches(env);
+  const cached = await caches.repo.get(repoId);
   if (cached) return { repo: cached, isCached: true };
 
   const response = await fetch(`https://api.github.com/repos/${repoId}`, {
@@ -180,7 +177,7 @@ export async function fetchGitHubRepo(
 
   const raw = (await response.json()) as Record<string, any>;
   const repo = mapGitHubRepoResponse(raw);
-  repoCache.set(repoId, repo);
+  await caches.repo.set(repoId, repo, ctx);
   return { repo, isCached: false };
 }
 

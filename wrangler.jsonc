@@ -13,5 +13,14 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  // Shared L2 cache across isolates. Create once:
+  //   npx wrangler kv namespace create gitdigest_cache
+  // Then paste the returned id below. (Dev uses miniflare by default — no preview_id needed.)
+  "kv_namespaces": [
+    {
+      "binding": "CACHE_KV",
+      "id": "9178b1b73d4144b3b48331d12c0c8d0e"
+    }
   ]
 }

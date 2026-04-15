@@ -11,7 +11,12 @@ import { handleAdminStats, handleAdminClear } from "./admin";
 
 // ─── Route Table ──────────────────────────────────────────────────────────────
 
-type RouteHandler = (request: Request, url: URL, env: Env) => Promise<Response>;
+type RouteHandler = (
+  request: Request,
+  url: URL,
+  env: Env,
+  ctx: ExecutionContext,
+) => Promise<Response>;
 
 const routes: Array<{
   path: string;
@@ -26,12 +31,12 @@ const routes: Array<{
   {
     path: "/api/admin/stats",
     methods: ["GET"],
-    handler: (req) => handleAdminStats(req),
+    handler: (req, _url, env) => handleAdminStats(req, env),
   },
   {
     path: "/api/admin/clear",
     methods: ["POST"],
-    handler: (req) => handleAdminClear(req),
+    handler: (req, _url, env, ctx) => handleAdminClear(req, env, ctx),
   },
 ];
 
@@ -41,7 +46,7 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<Response> {
     if (request.method === "OPTIONS") return corsPreflightResponse();
 
@@ -54,7 +59,7 @@ export default {
         return json({ error: "Method not allowed" }, 405);
       }
       try {
-        return await route.handler(request, url, env);
+        return await route.handler(request, url, env, ctx);
       } catch (error) {
         console.error(`Unhandled error on ${url.pathname}:`, error);
         return json({ error: "Internal server error" }, 500);
