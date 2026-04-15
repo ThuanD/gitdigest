@@ -1,4 +1,4 @@
-import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL, SUPPORTED_LANGUAGES } from "./constants.js";
+import { LS_API_KEY, LS_AI_PROVIDER, LS_AI_MODEL } from "./constants.js";
 import { state, setLang, setFeedKindState } from "./state.js";
 import * as dom from "./dom.js";
 import { renderActivityGraph } from "./storage.js";
@@ -12,7 +12,6 @@ import { loadChatContent } from "./chat.js";
 import {
   loadWordCloud,
   showWordCloudView,
-  hideWordCloudView,
   toggleWordcloudChat,
   getCurrentWordcloudPeriod,
   updateCurrentWordcloudPeriod,
@@ -23,26 +22,27 @@ import {
   getCommentsOpenPref,
   setCommentsOpenPref,
 } from "./storage.js";
+import { createDropdown } from "./dropdown.js";
 
 // Mobile breakpoint constant
 const MOBILE_BREAKPOINT = 768;
 
 // ─── Settings modal ───────────────────────────────────────────────────────────
+const providerDropdownApi = createDropdown(dom.providerDropdown, {
+  value: localStorage.getItem(LS_AI_PROVIDER) || "openai",
+  onChange: () => updateModelHint(),
+});
+
 dom.openSettingsBtn.addEventListener("click", () => {
   // Load saved values
   dom.apiKeyInput.value = localStorage.getItem(LS_API_KEY) || "";
-  dom.providerSelect.value = localStorage.getItem(LS_AI_PROVIDER) || "openai";
+  providerDropdownApi.setValue(localStorage.getItem(LS_AI_PROVIDER) || "openai", false);
   dom.modelInput.value = localStorage.getItem(LS_AI_MODEL) || "";
   updateModelHint();
   dom.settingsModal.showModal();
 });
 
 dom.closeSettingsBtn.addEventListener("click", () => dom.settingsModal.close());
-
-// Provider change handler
-dom.providerSelect.addEventListener("change", () => {
-  updateModelHint();
-});
 
 // Model input handler
 dom.modelInput.addEventListener("input", () => {
@@ -52,7 +52,7 @@ dom.modelInput.addEventListener("input", () => {
 dom.saveKeyBtn.addEventListener("click", () => {
   if (dom.apiKeyInput.value.trim()) {
     localStorage.setItem(LS_API_KEY, dom.apiKeyInput.value.trim());
-    localStorage.setItem(LS_AI_PROVIDER, dom.providerSelect.value);
+    localStorage.setItem(LS_AI_PROVIDER, providerDropdownApi.getValue());
     localStorage.setItem(LS_AI_MODEL, dom.modelInput.value.trim());
     dom.settingsModal.close();
     if (state.currentActiveRepo)
@@ -68,14 +68,14 @@ dom.clearKeyBtn.addEventListener("click", () => {
   localStorage.removeItem(LS_AI_PROVIDER);
   localStorage.removeItem(LS_AI_MODEL);
   dom.apiKeyInput.value = "";
-  dom.providerSelect.value = "openai";
+  providerDropdownApi.setValue("openai", false);
   dom.modelInput.value = "";
   updateModelHint();
 });
 
 // Update model hint based on provider
 function updateModelHint() {
-  const provider = dom.providerSelect.value;
+  const provider = providerDropdownApi.getValue();
   const customModel = dom.modelInput.value.trim();
   
   const defaultModels = {
@@ -97,20 +97,60 @@ function updateModelHint() {
 }
 
 // ─── Language selector ────────────────────────────────────────────────────────
-SUPPORTED_LANGUAGES.forEach(({ code, name }) => {
-  const opt = document.createElement("option");
-  opt.value = code;
-  opt.textContent = name;
-  if (code === state.currentLang) opt.selected = true;
-  dom.langSelect.appendChild(opt);
+createDropdown(dom.langDropdown, {
+  value: state.currentLang,
+  onChange: (code) => {
+    setLang(code);
+    if (state.currentActiveRepo)
+      handleCardClick(
+        state.currentActiveRepo,
+        document.getElementById(`card-${state.activeCardId}`),
+      );
+  },
 });
-dom.langSelect.addEventListener("change", (e) => {
-  setLang(e.target.value);
-  if (state.currentActiveRepo)
-    handleCardClick(
-      state.currentActiveRepo,
-      document.getElementById(`card-${state.activeCardId}`),
-    );
+
+// ─── Nav tab sync (right-pane state: "wordcloud" | "reader") ─────────────────
+const LS_NAV_MODE = "gitdigest_nav_mode_v1";
+
+function syncNavTabs(mode) {
+  const wordcloudActive = mode === "wordcloud";
+  dom.navTrendsBtn.classList.toggle("feed-kind-active", !wordcloudActive);
+  dom.navTrendsBtn.setAttribute("aria-pressed", String(!wordcloudActive));
+  dom.wordcloudBtn.classList.toggle("feed-kind-active", wordcloudActive);
+  dom.wordcloudBtn.setAttribute("aria-pressed", String(wordcloudActive));
+  try {
+    localStorage.setItem(LS_NAV_MODE, mode);
+  } catch {
+    /* storage full */
+  }
+}
+
+dom.navTrendsBtn.addEventListener("click", () => {
+  // Close wordcloud view
+  dom.wordcloudView.classList.add("hidden");
+  dom.wordcloudChatPane.classList.add("hidden");
+
+  if (state.currentActiveRepo && state.activeCardId) {
+    // Restore reader for the active repo
+    const card = document.getElementById(`card-${state.activeCardId}`);
+    if (card) {
+      handleCardClick(state.currentActiveRepo, card);
+      return;
+    }
+  }
+
+  // No active repo — show feed-focus state: empty placeholder on right, feed on left
+  dom.readerWorkspace.classList.add("hidden");
+  dom.readerWorkspace.classList.remove("flex");
+  dom.emptyState.classList.remove("hidden");
+  dom.emptyState.classList.add("flex");
+
+  if (window.innerWidth < MOBILE_BREAKPOINT) {
+    // Mobile: focus on feed list
+    dom.feedPane.classList.remove("hidden");
+    dom.readerPane.classList.add("max-md:hidden");
+  }
+  syncNavTabs("reader");
 });
 
 // ─── Feed kind ────────────────────────────────────────────────────────────────
@@ -138,8 +178,8 @@ function resetReaderForFeedSwitch() {
       icon.classList.add("opacity-0");
     }
   });
-  dom.emptyState.classList.remove("hidden");
-  dom.wordcloudView.classList.add("hidden");
+  dom.emptyState.classList.add("hidden");
+  dom.wordcloudView.classList.remove("hidden");
   dom.readerWorkspace.classList.add("hidden");
   dom.readerWorkspace.classList.remove("flex");
   dom.readerContent.classList.add("hidden");
@@ -171,19 +211,31 @@ dom.feedKindWeekly.addEventListener("click", () => setFeedKind("weekly"));
 dom.feedKindMonthly.addEventListener("click", () => setFeedKind("monthly"));
 syncFeedKindButtons();
 
+// ─── Filter state helpers ─────────────────────────────────────────────────────
+function wordFilterActive() {
+  return state.currentRepos !== state.allRepos;
+}
+function syncClearBtnState() {
+  const anyFilter = state.hideReadActive || state.favOnlyActive || wordFilterActive();
+  dom.wordcloudClearBtn.disabled = !anyFilter;
+}
+
 // ─── Hide-read toggle ─────────────────────────────────────────────────────────
 dom.hideReadToggle.addEventListener("click", () => {
   state.hideReadActive = !state.hideReadActive;
   document.body.classList.toggle("hide-read-active", state.hideReadActive);
-  if (state.hideReadActive) {
-    dom.toggleKnob.classList.replace("translate-x-0", "translate-x-[14px]");
-    dom.toggleKnob.classList.replace("bg-textMuted", "bg-hn");
-    dom.hideReadToggle.classList.add("border-hn/50");
-  } else {
-    dom.toggleKnob.classList.replace("translate-x-[14px]", "translate-x-0");
-    dom.toggleKnob.classList.replace("bg-hn", "bg-textMuted");
-    dom.hideReadToggle.classList.remove("border-hn/50");
-  }
+  dom.hideReadToggle.classList.toggle("filter-btn-active", state.hideReadActive);
+  dom.hideReadToggle.setAttribute("aria-pressed", String(state.hideReadActive));
+  syncClearBtnState();
+});
+
+// ─── Favorites-only toggle ────────────────────────────────────────────────────
+dom.favOnlyToggle.addEventListener("click", () => {
+  state.favOnlyActive = !state.favOnlyActive;
+  document.body.classList.toggle("fav-only-active", state.favOnlyActive);
+  dom.favOnlyToggle.classList.toggle("filter-btn-fav-active", state.favOnlyActive);
+  dom.favOnlyToggle.setAttribute("aria-pressed", String(state.favOnlyActive));
+  syncClearBtnState();
 });
 
 // ─── Load more ────────────────────────────────────────────────────────────────
@@ -266,20 +318,36 @@ dom.readerViewSourceBtn.addEventListener("click", () => {
 // ─── Mobile back ──────────────────────────────────────────────────────────────
 dom.mobileBackBtn.addEventListener("click", () => {
   closeCommentsPanelLocal(false);
-  dom.feedPane.classList.remove("hidden");
-  dom.readerPane.classList.add("hidden");
-  dom.readerPane.classList.remove("flex");
+  if (window.innerWidth < MOBILE_BREAKPOINT) {
+    dom.feedPane.classList.remove("hidden");
+    dom.readerPane.classList.add("max-md:hidden");
+  }
+  // Return to wordcloud default on desktop
+  dom.readerWorkspace.classList.add("hidden");
+  dom.readerWorkspace.classList.remove("flex");
+  dom.wordcloudView.classList.remove("hidden");
+  dom.emptyState.classList.add("hidden");
+  // Clear active card
+  if (state.activeCardId) {
+    const old = document.getElementById(`card-${state.activeCardId}`);
+    if (old) old.classList.remove("is-active");
+    state.activeCardId = null;
+    state.currentActiveRepo = null;
+  }
+  syncNavTabs("wordcloud");
 });
 
 // ─── Wordcloud ────────────────────────────────────────────────────────────────
 dom.wordcloudBtn.addEventListener("click", async () => {
   try {
     showWordCloudView();
+    syncNavTabs("wordcloud");
     await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
     
-    // Hide feed on mobile (reader overlay takes full width)
+    // Hide feed on mobile (reader pane takes full width)
     if (window.innerWidth < MOBILE_BREAKPOINT) {
       dom.feedPane.classList.add("hidden");
+      dom.readerPane.classList.remove("max-md:hidden");
     }
   } catch (error) {
     console.error("Failed to load WordCloud:", error);
@@ -295,9 +363,26 @@ dom.wordcloudBtn.addEventListener("click", async () => {
   }
 });
 dom.wordcloudClearBtn.addEventListener("click", () => {
-  renderReposFromIds(state.allRepos, 1, handleCardClick);
-  dom.statusTextEl.textContent = "Live";
-  dom.wordcloudClearBtn.disabled = true;
+  // Clear word filter
+  if (wordFilterActive()) {
+    renderReposFromIds(state.allRepos, 1, handleCardClick);
+    dom.statusTextEl.textContent = "Live";
+  }
+  // Clear hide-read
+  if (state.hideReadActive) {
+    state.hideReadActive = false;
+    document.body.classList.remove("hide-read-active");
+    dom.hideReadToggle.classList.remove("filter-btn-active");
+    dom.hideReadToggle.setAttribute("aria-pressed", "false");
+  }
+  // Clear favorites-only
+  if (state.favOnlyActive) {
+    state.favOnlyActive = false;
+    document.body.classList.remove("fav-only-active");
+    dom.favOnlyToggle.classList.remove("filter-btn-fav-active");
+    dom.favOnlyToggle.setAttribute("aria-pressed", "false");
+  }
+  syncClearBtnState();
 });
 
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
@@ -420,10 +505,10 @@ async function handleCardClick(repo, cardElement) {
   state.activeCardId = repo.id;
   state.currentActiveRepo = repo;
   cardElement.classList.add("is-active");
+  syncNavTabs("reader");
 
-  dom.readerPane.classList.remove("hidden");
-  dom.readerPane.classList.add("flex");
   if (window.innerWidth < MOBILE_BREAKPOINT) {
+    dom.readerPane.classList.remove("max-md:hidden");
     dom.feedPane.classList.add("hidden");
   }
 
@@ -485,3 +570,34 @@ async function handleCardClick(repo, cardElement) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 renderActivityGraph();
 loadReposClient(1, state.feedKind, handleCardClick);
+
+// Restore last right-pane mode (defaults to wordcloud)
+const _savedMode = (() => {
+  try {
+    return localStorage.getItem(LS_NAV_MODE);
+  } catch {
+    return null;
+  }
+})();
+const _initialMode = _savedMode === "reader" ? "reader" : "wordcloud";
+
+if (_initialMode === "reader" && window.innerWidth >= MOBILE_BREAKPOINT) {
+  // Show empty state — no active repo on fresh load
+  dom.wordcloudView.classList.add("hidden");
+  dom.readerWorkspace.classList.add("hidden");
+  dom.emptyState.classList.remove("hidden");
+  dom.emptyState.classList.add("flex");
+  syncNavTabs("reader");
+} else {
+  syncNavTabs("wordcloud");
+  if (window.innerWidth >= MOBILE_BREAKPOINT) {
+    (async () => {
+      try {
+        showWordCloudView();
+        await loadWordCloud(getCurrentWordcloudPeriod(), handleCardClick);
+      } catch (err) {
+        console.error("Initial wordcloud load failed:", err);
+      }
+    })();
+  }
+}

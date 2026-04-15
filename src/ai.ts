@@ -9,7 +9,12 @@ import { AIApiError } from "./errors";
 
 // ─── Provider Detection ───────────────────────────────────────────────────────
 
-export function detectProvider(apiKey: string): AIProvider {
+const VALID_PROVIDERS: readonly AIProvider[] = ["openai", "groq", "openrouter", "gemini"];
+
+export function detectProvider(apiKey: string, hint?: string | null): AIProvider {
+  if (hint && (VALID_PROVIDERS as readonly string[]).includes(hint)) {
+    return hint as AIProvider;
+  }
   if (apiKey.startsWith("gsk_")) return "groq";
   if (apiKey.startsWith("sk-or-")) return "openrouter";
   if (apiKey.startsWith("sk-")) return "openai";
@@ -28,8 +33,9 @@ function buildProviderConfig(
   messages: AIMessage[],
   apiKey: string,
   env?: Env,
+  providerHint?: string | null,
 ): ProviderConfig {
-  const provider = detectProvider(apiKey);
+  const provider = detectProvider(apiKey, providerHint);
 
   switch (provider) {
     case "groq":
@@ -98,14 +104,15 @@ export async function callAI(
   userPrompt: string,
   apiKey: string,
   env?: Env,
+  providerHint?: string | null,
 ): Promise<string> {
   const messages: AIMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ];
 
-  const config = buildProviderConfig(messages, apiKey, env);
-  const provider = detectProvider(apiKey);
+  const config = buildProviderConfig(messages, apiKey, env, providerHint);
+  const provider = detectProvider(apiKey, providerHint);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

@@ -163,8 +163,9 @@ export async function handleSummarize(
     const lang = (url.searchParams.get("lang") ?? "en").slice(0, 12);
     const clientProvider = url.searchParams.get("provider");
     const clientModel = url.searchParams.get("model");
-    const apiKey =
-      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
+    const clientKey = resolveClientApiKey(request);
+    const apiKey = clientKey || (env.API_KEY ?? "").trim();
+    const effectiveProvider = clientKey ? clientProvider : null;
     if (!apiKey) {
       return json(
         {
@@ -206,7 +207,7 @@ export async function handleSummarize(
       ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
     };
 
-    const summary = await generateSummary(repoId, lang, apiKey, enhancedEnv);
+    const summary = await generateSummary(repoId, lang, apiKey, enhancedEnv, effectiveProvider);
     summaryCache.set(cacheKey, summary);
     return json({ summary, isGenerated: true });
   } catch (error) {
@@ -311,8 +312,9 @@ export async function handleAsk(
     const cached = askCache.get(cacheKey);
     if (cached) return json({ answer: cached, isCached: true });
 
-    const apiKey =
-      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
+    const clientKey = resolveClientApiKey(request);
+    const apiKey = clientKey || (env.API_KEY ?? "").trim();
+    const effectiveProvider = clientKey ? clientProvider : null;
     if (!apiKey) {
       return json(
         { error: "No API key configured.", errorCode: "no_api_key" },
@@ -366,6 +368,7 @@ ${summary}`;
       `Question: ${escapePrompt(cleanQuestion)}`,
       apiKey,
       enhancedEnv,
+      effectiveProvider,
     );
     askCache.set(cacheKey, answer);
     return json({ answer, isCached: false });
@@ -417,8 +420,11 @@ export async function handleWordCloud(
 
     // 3. Generate
     const repos = await fetchTrendingRepos(period, "", env);
-    const apiKey =
-      resolveClientApiKey(request) || (env.API_KEY ?? "").trim();
+    const clientKey = resolveClientApiKey(request);
+    const apiKey = clientKey || (env.API_KEY ?? "").trim();
+    // Only respect client-supplied provider hint when the client also supplied its own key.
+    // Otherwise we'd route the server's env.API_KEY to the wrong provider.
+    const effectiveProvider = clientKey ? clientProvider : null;
 
     if (!apiKey) {
       const wordData = extractBasicKeywords(repos);
@@ -451,7 +457,7 @@ export async function handleWordCloud(
       ...(clientProvider === "gemini" && clientModel && { GEMINI_MODEL: clientModel })
     };
 
-    const raw = await callAI(systemPrompt, userPrompt, apiKey, enhancedEnv);
+    const raw = await callAI(systemPrompt, userPrompt, apiKey, enhancedEnv, effectiveProvider);
 
     let wordData: WordCloudData;
     try {
@@ -482,6 +488,7 @@ async function generateSummary(
   lang: string,
   apiKey: string,
   env: Env,
+  providerHint?: string | null,
 ): Promise<string> {
   const { repo } = await fetchGitHubRepo(repoId, env);
   const { readmeContent } = await fetchAndRenderReadme(repo, env, true);
@@ -502,7 +509,7 @@ async function generateSummary(
     lang,
     repo,
   );
-  return callAI(systemPrompt, userPrompt, apiKey, env);
+  return callAI(systemPrompt, userPrompt, apiKey, env, providerHint);
 }
 
 async function translateText(

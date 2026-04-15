@@ -1,6 +1,7 @@
 // ─── LocalStorage Keys ────────────────────────────────────────────────────────
 export const LS_READ_STATS = "readStats";
 export const LS_READ_REPOS = "readRepos";
+export const LS_FAV_REPOS = "favoriteRepos";
 export const LS_FEED_KIND = "gitdigest_feed_kind";
 export const LS_PREF_LANG = "preferredLang";
 export const LS_API_KEY = "api_key";
@@ -74,21 +75,21 @@ export const ERROR_MAP = {
     title: "API Key Required",
     hint: "Add your OpenAI, Groq, or Gemini API key in Settings to generate summaries.",
     action: "settings",
-    statusText: "Add API key in settings",
+    statusText: "Missing API key",
     statusColor: "bg-amber-500",
   },
   invalid_api_key: {
     title: "Invalid API Key",
     hint: "The key you provided was rejected by the AI provider. Please check it in Settings.",
     action: "settings",
-    statusText: "Invalid API key — check settings",
+    statusText: "Invalid API key",
     statusColor: "bg-amber-500",
   },
   rate_limit: {
     title: "Rate Limit Reached",
     hint: "Your API key has hit its request-rate limit. Wait a moment, then try again.",
     action: null,
-    statusText: "Rate limit — try again shortly",
+    statusText: "Rate limit",
     statusColor: "bg-yellow-500",
   },
   quota_exceeded: {
@@ -109,14 +110,14 @@ export const ERROR_MAP = {
     title: "Repository Not Found",
     hint: "GitHub could not find this repository.",
     action: null,
-    statusText: "Repository not found",
+    statusText: "Not found",
     statusColor: "bg-red-500",
   },
   github_rate_limit: {
     title: "GitHub Rate Limit",
     hint: "GitHub's API is temporarily rate-limiting this server. Try again in a few minutes.",
     action: null,
-    statusText: "GitHub rate limit — try again",
+    statusText: "GitHub rate limit",
     statusColor: "bg-yellow-500",
   },
   no_summary: {

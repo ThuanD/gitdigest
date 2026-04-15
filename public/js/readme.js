@@ -86,7 +86,7 @@ function renderReadmeContent(data, repo) {
   
   // Update status to show source loaded
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span><span class="uppercase tracking-wider">Source loaded</span></span>`;
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span><span class="uppercase tracking-wider">Loaded</span></span>`;
   }
 }
 
@@ -121,7 +121,7 @@ function renderReadmeError(err, repo) {
     
   // Update status to show error
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Source error</span></span>`;
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span><span class="uppercase tracking-wider">Error</span></span>`;
   }
 }
 
@@ -178,7 +178,7 @@ export async function openSourcePanel(repo, persist, deps) {
 
   // Set loading status only if not cached
   if (readerStatus) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading source</span></span>`;
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span><span class="uppercase tracking-wider">Loading</span></span>`;
   }
 
   // Loading state

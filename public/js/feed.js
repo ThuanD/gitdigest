@@ -2,30 +2,24 @@ import { SPINNER_SVG } from "./constants.js";
 import { state } from "./state.js";
 import { feedList, loadMoreBtn, statusDot, statusTextEl } from "./dom.js";
 import { escapeHtml } from "./utils.js";
-import { isRead } from "./storage.js";
+import { isRead, isFavorite, toggleFavorite } from "./storage.js";
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 export function createFeedSkeletonCard() {
   const el = document.createElement("div");
   el.setAttribute("data-feed-skeleton", "1");
   el.className =
-    "repo-card relative overflow-hidden bg-surface border border-borderSubtle p-4 rounded-xl shadow-sm flex flex-col gap-3 min-h-[180px]";
+    "repo-card bg-surface border border-borderSubtle px-4 py-3 rounded-lg flex flex-col gap-2";
   el.innerHTML = `
-    <div class="space-y-2.5">
-      <div class="ui-skeleton h-4 rounded-md" style="width:88%"></div>
-      <div class="ui-skeleton h-3 rounded-md" style="width:60%"></div>
+    <div class="flex items-center justify-between gap-3">
+      <div class="ui-skeleton h-3.5 rounded-md" style="width:55%"></div>
+      <div class="ui-skeleton h-3 rounded-md" style="width:64px"></div>
     </div>
-    <div class="space-y-2 flex-1">
-      <div class="ui-skeleton h-2.5 rounded-md" style="width:100%"></div>
-      <div class="ui-skeleton h-2.5 rounded-md" style="width:92%"></div>
-      <div class="ui-skeleton h-2.5 rounded-md" style="width:70%"></div>
-    </div>
-    <div class="flex items-center justify-between pt-3 border-t border-borderSubtle/50">
-      <div class="flex gap-2">
-        <div class="ui-skeleton h-5 w-14 rounded-md"></div>
-        <div class="ui-skeleton h-5 w-12 rounded-md"></div>
-      </div>
+    <div class="ui-skeleton h-3 rounded-md" style="width:92%"></div>
+    <div class="ui-skeleton h-3 rounded-md" style="width:78%"></div>
+    <div class="flex gap-2 pt-1">
       <div class="ui-skeleton h-3 w-16 rounded-md"></div>
+      <div class="ui-skeleton h-3 w-12 rounded-md"></div>
     </div>`;
   return el;
 }
@@ -79,56 +73,54 @@ export function renderReposFromIds(repos, page = 1, onCardClick) {
 
     const readClass = isRead(repo.id) ? "is-read" : "";
     const activeClass = state.activeCardId === repo.id ? "is-active" : "";
-    card.className = `repo-card relative overflow-hidden bg-surface border border-borderSubtle p-4 rounded-xl hover:bg-surfaceHover hover:border-borderHover hover:-translate-y-0.5 cursor-pointer flex flex-col gap-3 min-h-[180px] group animate-fade-in opacity-0 shadow-sm ${readClass} ${activeClass}`;
+    const favClass = isFavorite(repo.id) ? "is-fav" : "";
+    card.className = `repo-card bg-surface border border-borderSubtle rounded-lg px-4 py-3 hover:bg-surfaceHover hover:border-borderHover cursor-pointer flex flex-col gap-1.5 group animate-fade-in opacity-0 ${readClass} ${activeClass} ${favClass}`;
 
-    const scoreColor =
-      repo.stars > 500
-        ? "text-hn"
-        : repo.stars > 100
-          ? "text-amber-500"
-          : "text-textMuted";
     const [owner, repoName] = (repo.fullName || "").split("/");
+    const topics = Array.isArray(repo.topics) ? repo.topics.slice(0, 3) : [];
+    const starsDelta = repo.starsDelta ?? repo.stars_today ?? null;
+    const formatK = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n));
 
     card.innerHTML = `
-      <span class="absolute inset-x-0 top-0 h-px opacity-60 group-hover:opacity-100 transition-opacity" style="background: linear-gradient(90deg, transparent, #8b5cf6, #22d3ee, transparent);"></span>
-      <div class="flex justify-between items-start gap-2">
-        <div class="min-w-0 flex-1">
-          <div class="text-[10px] font-mono text-textMuted/70 uppercase tracking-wider truncate">${escapeHtml(owner || "")}</div>
-          <h3 class="font-semibold text-[15px] leading-tight text-textMain group-hover:text-white transition-colors truncate">${escapeHtml(repoName || repo.fullName)}</h3>
+      <div class="flex items-start justify-between gap-3 min-w-0">
+        <div class="min-w-0 flex-1 flex items-baseline gap-1.5">
+          <span class="text-[11px] font-mono text-textMuted/70 truncate">${escapeHtml(owner || "")}/</span>
+          <h3 class="font-semibold text-[14px] leading-tight text-textMain group-hover:text-white transition-colors truncate">${escapeHtml(repoName || repo.fullName)}</h3>
         </div>
-        <div class="check-icon ${isRead(repo.id) ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity duration-200 text-textMuted shrink-0">
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
+        <div class="flex items-center gap-2 shrink-0 text-[11px] font-mono text-textMuted">
+          <span class="inline-flex items-center gap-1">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            ${formatK(repo.stars ?? 0)}
+          </span>
+          ${starsDelta ? `<span class="text-hn">+${formatK(starsDelta)}</span>` : ""}
+          <button type="button" class="fav-btn p-0.5 -m-0.5 rounded hover:bg-appBg transition-colors" data-fav-btn aria-label="Toggle favorite" aria-pressed="${isFavorite(repo.id)}" title="Favorite">
+            <svg class="w-3.5 h-3.5" fill="${isFavorite(repo.id) ? "currentColor" : "none"}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.32.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.32-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
+          </button>
+          <span class="check-icon ${isRead(repo.id) ? "opacity-100" : "opacity-0"} group-hover:opacity-100 transition-opacity text-hn" aria-hidden="true">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          </span>
         </div>
       </div>
-      <div class="text-[13px] text-textMuted leading-relaxed line-clamp-3 flex-1">${escapeHtml(repo.description || "")}</div>
-      <div class="flex items-center justify-between pt-3 border-t border-borderSubtle/60">
-        <div class="flex items-center gap-3 text-xs min-w-0">
-          ${
-            repo.language
-              ? `<div class="flex items-center gap-1.5 min-w-0">
-                  ${langDot(repo.language)}
-                  <span class="font-mono text-textMuted truncate">${escapeHtml(repo.language)}</span>
-                </div>`
-              : ""
-          }
-          <div class="flex items-center gap-1 ${scoreColor}">
-            <svg class="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-label="star">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-            </svg>
-            <span class="font-mono">${repo.stars}</span>
-          </div>
-          <div class="flex items-center gap-1 text-textMuted/70">
-            <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="fork">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
-            </svg>
-            <span class="font-mono">${repo.forks ?? 0}</span>
-          </div>
-        </div>
+      ${repo.description ? `<p class="text-[12.5px] text-textMuted leading-snug line-clamp-2">${escapeHtml(repo.description)}</p>` : ""}
+      <div class="flex items-center gap-2 flex-wrap text-[10.5px] font-mono text-textMuted/80 min-w-0">
+        ${repo.language ? `<span class="inline-flex items-center gap-1 shrink-0">${langDot(repo.language)}<span class="truncate">${escapeHtml(repo.language)}</span></span>` : ""}
+        ${repo.forks ? `<span class="inline-flex items-center gap-1 shrink-0 text-textMuted/60"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>${formatK(repo.forks)}</span>` : ""}
+        ${topics.map((t) => `<span class="px-1.5 py-0.5 rounded bg-appBg border border-borderSubtle/70 text-textMuted/75 truncate max-w-[120px]">${escapeHtml(t)}</span>`).join("")}
       </div>`;
 
-    card.addEventListener("click", () => onCardClick(repo, card));
+    card.addEventListener("click", (e) => {
+      const favBtn = e.target.closest("[data-fav-btn]");
+      if (favBtn) {
+        e.stopPropagation();
+        const nowFav = toggleFavorite(repo.id);
+        card.classList.toggle("is-fav", nowFav);
+        favBtn.setAttribute("aria-pressed", String(nowFav));
+        const svg = favBtn.querySelector("svg");
+        if (svg) svg.setAttribute("fill", nowFav ? "currentColor" : "none");
+        return;
+      }
+      onCardClick(repo, card);
+    });
     frag.appendChild(card);
   });
   feedList.appendChild(frag);

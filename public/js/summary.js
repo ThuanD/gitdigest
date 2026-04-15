@@ -13,7 +13,7 @@ export function readerSummarySkeletonHTML() {
 function summaryStatusLangSuffix() {
   return state.currentLang === "en"
     ? ""
-    : ` (${state.currentLang.toUpperCase()})`;
+    : ` · ${state.currentLang.toUpperCase()}`;
 }
 
 export function renderSummaryError(errorCode, rawMessage) {
@@ -46,7 +46,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
   const cached = localStorage.getItem(cacheKey);
 
   if (cached) {
-    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Loaded from cache${summaryStatusLangSuffix()}</span></span>`;
+    readerStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${summaryStatusLangSuffix()}</span></span>`;
     readerBody.innerHTML = markdownToSafeHtml(cached);
     applyBlankTargets(readerBody);
     readerBody.classList.remove("hidden");
@@ -59,7 +59,7 @@ export async function loadSummaryForRepo(repo, { onSummaryReady } = {}) {
   readerBody.classList.remove("hidden");
   readerBody.classList.add("opacity-50");
   readerBody.innerHTML = readerSummarySkeletonHTML();
-  readerStatus.innerHTML = `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating summary</span></span>`;
+  readerStatus.innerHTML = `<span class="flex items-center gap-2">${SPINNER_SVG}<span class="uppercase tracking-wider">Generating</span></span>`;
 
   try {
     const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();

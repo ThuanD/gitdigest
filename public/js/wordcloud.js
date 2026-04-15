@@ -4,7 +4,7 @@ import { state } from "./state.js";
 function wordcloudStatusLangSuffix() {
   return state.currentLang === "en"
     ? ""
-    : ` (${state.currentLang.toUpperCase()})`;
+    : ` · ${state.currentLang.toUpperCase()}`;
 }
 import { getSecureApiKey, migrateApiKeysToSecureStorage } from "./security.js";
 import {
@@ -35,7 +35,7 @@ import {
   wordcloudBackdrop,
 } from "./dom.js";
 import { escapeHtml, getWordcloudCache, setWordcloudCache } from "./utils.js";
-import { initWordcloudChat } from "./chat.js";
+import { initWordcloudChat, renderWordcloudChatError } from "./chat.js";
 import { renderReposFromIds } from "./feed.js";
 import { getCommentsOpenPref, setCommentsOpenPref } from "./storage.js";
 
@@ -103,7 +103,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
       const cachedData = getWordcloudCache(feedKind, state.currentLang);
       if (cachedData) {
         if (wordcloudStatus) {
-          wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">From local cache${wordcloudStatusLangSuffix()}</span></span>`;
+          wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-hn shrink-0"></span><span class="uppercase tracking-wider">Cached${wordcloudStatusLangSuffix()}</span></span>`;
         }
         renderWordCloud(cachedData.words);
         renderWordCloudInsights(cachedData, feedKind);
@@ -119,6 +119,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     }
 
     // Show loading state only if not cached
+    clearWordCloudError();
     wordcloudCanvas.style.display = "none";
     wordcloudLoading.classList.remove("hidden");
     wordcloudLoading.classList.add("flex");
@@ -140,23 +141,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     }
 
     // Get API key from secure storage with fallback
-    let apiKey;
-    try {
-      apiKey =
-        getSecureApiKey(provider) ||
-        getSecureApiKey("default") ||
-        SafeStorage.getItem(LS_API_KEY, "").trim();
-
-      // Validate API key if provided
-      if (apiKey) {
-        DefensiveChecker.isValidApiKey(apiKey);
-      }
-    } catch (keyError) {
-      ErrorHandler.handle(
-        new SecurityError("Invalid API key format", "INVALID_API_KEY"),
-      );
-      apiKey = ""; // Use empty key to continue without API
-    }
+    const apiKey = (localStorage.getItem(LS_API_KEY) || "").trim();
 
     const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
@@ -192,7 +177,9 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     if (!res.ok || data.error) {
       const errorCode = data.errorCode || "server_error";
       const errorMessage = data.error || "Unknown server error";
-      throw new Error(`${errorCode}: ${errorMessage}`);
+      const err = new Error(errorMessage);
+      err.errorCode = errorCode;
+      throw err;
     }
 
     // Validate response data structure
@@ -222,7 +209,7 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     if (wordcloudStatus) {
       const dotClass = data.isCached ? "bg-hn" : "bg-green-500";
       const statusText = data.isCached
-        ? `From server cache${wordcloudStatusLangSuffix()}`
+        ? `Cached${wordcloudStatusLangSuffix()}`
         : `Generated${wordcloudStatusLangSuffix()}`;
       wordcloudStatus.innerHTML = `<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full ${dotClass} shrink-0"></span><span class="uppercase tracking-wider">${statusText}</span></span>`;
     }
@@ -239,7 +226,8 @@ export const loadWordCloud = PerformanceMonitor.measureFunction(async function (
     });
 
     console.error("WordCloud load error:", error);
-    renderWordCloudError("server_error", errorMessage);
+    const errorCode = error?.errorCode || "server_error";
+    renderWordCloudError(errorCode, error?.message || errorMessage);
   }
 }, "loadWordCloud");
 
@@ -285,25 +273,34 @@ function renderWordCloudError(errorCode, rawMessage) {
   }
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
+  wordcloudCanvas.style.display = "none";
 
-  wordcloudCanvas.style.display = "block";
-  const ctx = wordcloudCanvas.getContext("2d");
-  ctx.clearRect(0, 0, wordcloudCanvas.width, wordcloudCanvas.height);
-  ctx.fillStyle = "#a1a1aa";
-  ctx.font = "14px Geist Sans, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(
-    def.title,
-    wordcloudCanvas.width / 2,
-    wordcloudCanvas.height / 2 - 20,
-  );
-  ctx.font = "12px Geist Sans, sans-serif";
-  ctx.fillStyle = "#71717a";
-  ctx.fillText(
-    def.hint,
-    wordcloudCanvas.width / 2,
-    wordcloudCanvas.height / 2 + 10,
-  );
+  const container = wordcloudCanvas.parentElement;
+  if (!container) return;
+  let errorEl = container.querySelector("[data-wordcloud-error]");
+  if (!errorEl) {
+    errorEl = document.createElement("div");
+    errorEl.setAttribute("data-wordcloud-error", "");
+    container.appendChild(errorEl);
+  }
+  errorEl.className =
+    "flex flex-col items-center justify-center py-12 text-center animate-fade-in";
+  errorEl.innerHTML = `
+    <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+      <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <h3 class="text-lg font-medium text-textMain mb-2">${def.title}</h3>
+    <p class="text-textMuted text-sm max-w-md">${def.hint}</p>`;
+
+  renderWordcloudChatError(def.title, def.hint);
+}
+
+function clearWordCloudError() {
+  const container = wordcloudCanvas.parentElement;
+  const errorEl = container?.querySelector("[data-wordcloud-error]");
+  if (errorEl) errorEl.remove();
 }
 
 // ─── Canvas render ────────────────────────────────────────────────────────────
@@ -315,6 +312,7 @@ const CATEGORY_COLORS = {
 };
 
 function renderWordCloud(words) {
+  clearWordCloudError();
   wordcloudLoading.classList.add("hidden");
   wordcloudLoading.classList.remove("flex");
   wordcloudCanvas.style.display = "block";

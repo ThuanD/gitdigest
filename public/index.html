@@ -110,12 +110,12 @@
       </a>
 
       <!-- Nav tabs -->
-      <nav class="hidden sm:flex items-center gap-1 ml-2" aria-label="Primary">
+      <nav class="flex items-center gap-1 ml-2" aria-label="Primary">
         <button
           id="navTrendsBtn"
           type="button"
-          class="feed-kind-btn feed-kind-active px-3 py-1.5 text-xs font-mono rounded-md transition-colors"
-          aria-pressed="true"
+          class="feed-kind-btn px-3 py-1.5 text-xs font-mono rounded-md transition-colors"
+          aria-pressed="false"
         >Trends</button>
         <button
           id="wordcloudBtn"
@@ -136,16 +136,21 @@
           <span id="statusText">Live</span>
         </div>
 
-        <div class="relative">
-          <select
-            id="langSelect"
-            class="bg-surface border border-borderSubtle text-textMuted text-[10px] font-mono rounded px-2 py-1 pr-6 cursor-pointer hover:text-textMain hover:border-borderHover transition-colors focus:outline-none uppercase shadow-sm"
-          ></select>
-          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-textMuted">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+        <div id="langDropdown" data-dropdown class="relative">
+          <button
+            type="button"
+            data-dropdown-trigger
+            class="ui-dropdown-trigger bg-surface border border-borderSubtle text-textMuted text-[10px] font-mono rounded pl-2 pr-1.5 py-1 cursor-pointer hover:text-textMain hover:border-borderHover transition-colors focus:outline-none uppercase shadow-sm inline-flex items-center gap-1.5"
+          >
+            <span data-dropdown-label>EN</span>
+            <svg data-dropdown-caret class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
             </svg>
-          </div>
+          </button>
+          <ul data-dropdown-menu hidden class="ui-dropdown-menu absolute right-0 mt-1 min-w-[120px] z-40">
+            <li><button type="button" data-dropdown-item data-value="en" data-label-short="EN">English</button></li>
+            <li><button type="button" data-dropdown-item data-value="vi" data-label-short="VI">Tiếng Việt</button></li>
+          </ul>
         </div>
 
         <button
@@ -164,11 +169,11 @@
     </header>
 
     <!-- ── Main workspace ──────────────────────────────────────────────────── -->
-    <div class="flex flex-1 min-h-0">
+    <div class="flex flex-1 min-h-0 min-w-0">
     <!-- ── Feed pane ─────────────────────────────────────────────────────────── -->
     <aside
       id="feedPane"
-      class="flex-1 w-full flex flex-col h-full bg-appBg relative z-10 transition-transform duration-300"
+      class="w-full md:w-[380px] lg:w-[420px] md:shrink-0 flex flex-col h-full bg-appBg relative z-10 md:border-r md:border-borderSubtle"
     >
       <header
         class="shrink-0 pt-4 [&>div]:px-5 border-b border-borderSubtle bg-appBg/90 backdrop-blur-md z-10 sticky top-0"
@@ -186,9 +191,14 @@
             >
           </div>
           <div
-            class="overflow-x-hidden flex justify-start bg-neutral-900/50 p-1"
+            class="overflow-x-hidden bg-neutral-900/50 p-1.5 relative"
           >
-            <div id="activityGraph" class="activity-grid"></div>
+            <div id="activityMonths" class="activity-months"></div>
+            <div class="flex gap-1.5 mt-0.5">
+              <div id="activityDays" class="activity-days"></div>
+              <div id="activityGraph" class="activity-grid"></div>
+            </div>
+            <div id="activityTooltip" class="activity-tooltip" hidden></div>
           </div>
         </div>
 
@@ -254,43 +264,56 @@
         </div>
 
         <div
-          class="flex items-center justify-between mt-3 py-2 border-t border-borderSubtle"
+          class="flex items-center gap-1 mt-2 py-2 border-t border-borderSubtle"
+          role="toolbar"
+          aria-label="Feed filters"
         >
-          <span class="text-xs text-textMuted font-medium"
-            >Hide read repositories</span
-          >
           <button
             id="hideReadToggle"
-            class="w-8 h-4.5 bg-surface border border-borderSubtle rounded-full relative transition-colors duration-200 focus:outline-none flex items-center px-0.5 hover:border-hn/50"
+            type="button"
+            title="Hide read repositories"
+            aria-label="Hide read repositories"
+            aria-pressed="false"
+            class="filter-btn flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-mono text-textMuted bg-surface border border-borderSubtle rounded-md transition-colors hover:text-textMain hover:border-borderHover"
           >
-            <div
-              id="toggleKnob"
-              class="w-3.5 h-3.5 bg-textMuted rounded-full shadow-sm transform transition-transform duration-200 translate-x-0"
-            ></div>
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+            </svg>
+            <span>Unread</span>
           </button>
-        </div>
-
-        <div class="pt-3 pb-3 border-t border-borderSubtle">
+          <button
+            id="favOnlyToggle"
+            type="button"
+            title="Show favorites only"
+            aria-label="Show favorites only"
+            aria-pressed="false"
+            class="filter-btn flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-mono text-textMuted bg-surface border border-borderSubtle rounded-md transition-colors hover:text-textMain hover:border-borderHover"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.32.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.32-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>
+            </svg>
+            <span>Favorites</span>
+          </button>
           <button
             id="wordcloudClearBtn"
             type="button"
             disabled
-            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-surface group hover:bg-surfaceHover border border-borderSubtle rounded-lg transition-colors text-sm text-textMuted disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:bg-surfaceHover hover:enabled:text-textMain hover:enabled:border-borderHover"
-            title="Clear word filter"
+            title="Clear all filters"
+            aria-label="Clear all filters"
+            class="filter-btn inline-flex items-center justify-center p-1.5 text-textMuted bg-surface border border-borderSubtle rounded-md transition-colors hover:text-hn hover:border-borderHover disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-textMuted disabled:hover:border-borderSubtle"
           >
-            <svg class="w-3.5 h-3.5 text-textMuted group-hover:text-hn transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
-            <span class="text-xs text-textMuted group-hover:text-textMain transition-colors">Clear word filter</span>
           </button>
         </div>
       </header>
 
       <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
-        <div class="w-full max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 xl:px-10 pt-5 flex-1 flex flex-col min-h-0">
+        <div class="w-full px-3 pt-3 flex-1 flex flex-col min-h-0">
           <div
             id="feedList"
-            class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 md:gap-4 content-start"
+            class="flex-1 flex flex-col gap-2"
           ></div>
           <div
             id="loadMoreFooter"
@@ -309,21 +332,15 @@
       </div>
     </aside>
 
-    <!-- ── Reader pane ────────────────────────────────────────────────────────── -->
-    <!-- Backdrop when reader overlay is open -->
-    <div
-      id="readerBackdrop"
-      class="fixed inset-0 top-12 bg-black/40 backdrop-blur-[2px] z-30 hidden animate-fade-in"
-      aria-hidden="true"
-    ></div>
+    <!-- ── Reader pane (split-pane on desktop, full-screen push on mobile) ───── -->
     <main
       id="readerPane"
-      class="fixed top-12 bottom-0 right-0 w-full md:w-[75%] lg:w-[70%] xl:w-[65%] 2xl:w-[60%] max-w-[1400px] bg-surface hidden flex-col overflow-hidden z-40 border-l border-borderSubtle shadow-[-24px_0_64px_-30px_rgba(0,0,0,0.75)]"
+      class="flex-1 min-w-0 bg-surface flex-col overflow-hidden relative max-md:fixed max-md:inset-0 max-md:top-12 max-md:z-40 max-md:hidden flex"
     >
-      <!-- WordCloud View -->
+      <!-- WordCloud View (default state when no repo selected) -->
       <div
         id="wordcloudView"
-        class="hidden flex flex-1 min-h-0 min-w-0 flex-col"
+        class="flex flex-1 min-h-0 min-w-0 flex-col"
       >
         <div
           id="wordcloudSplit"
@@ -332,7 +349,7 @@
           <!-- Main wordcloud area -->
           <div
             id="wordcloudContent"
-            class="flex-1 min-w-0 min-h-0 flex-col overflow-y-auto w-full relative"
+            class="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto w-full relative"
           >
             <div
               class="sticky top-0 z-20 bg-surface/95 backdrop-blur-xl border-b border-borderSubtle shadow-sm flex flex-col shrink-0"
@@ -361,7 +378,7 @@
               </div>
 
               <div
-                class="px-6 py-8 md:py-10 md:px-10 lg:px-16 flex flex-col items-center"
+                class="px-6 py-5 md:py-5 md:px-10 lg:px-16 flex flex-col items-center"
               >
                 <div class="w-full max-w-2xl min-w-0 text-left">
                   <h2 class="reader-title-source-link">
@@ -373,7 +390,7 @@
                   >
                     <div
                       id="wordcloudStatus"
-                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm"
+                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
                     >
                       Loading…
                     </div>
@@ -584,7 +601,7 @@
 
       <div
         id="emptyState"
-        class="absolute inset-0 flex flex-col items-center justify-center text-textMuted animate-fade-in"
+        class="hidden absolute inset-0 flex-col items-center justify-center text-textMuted animate-fade-in"
       >
         <svg
           class="w-12 h-12 mb-4 text-borderSubtle"
@@ -633,7 +650,7 @@
             <div
               class="sticky top-0 z-20 bg-surface/95 backdrop-blur-xl border-b border-borderSubtle shadow-sm flex flex-col shrink-0"
             >
-              <div class="p-3 border-b border-borderSubtle flex items-center justify-between">
+              <div class="md:hidden p-3 border-b border-borderSubtle flex items-center justify-between">
                 <button
                   id="mobileBackBtn"
                   type="button"
@@ -644,11 +661,10 @@
                   </svg>
                   <span class="font-mono uppercase tracking-wider">Back</span>
                 </button>
-                <kbd class="hidden md:inline-block pointer-events-none select-none rounded border border-borderSubtle/90 bg-appBg px-1.5 py-0.5 text-[10px] font-mono text-textMuted/70 leading-none">ESC</kbd>
               </div>
 
               <div
-                class="px-6 py-8 md:py-10 md:px-10 lg:px-16 flex flex-col items-center"
+                class="px-6 py-5 md:py-5 md:px-10 lg:px-16 flex flex-col items-center"
               >
                 <div class="w-full max-w-2xl min-w-0 text-left">
                   <h2
@@ -669,7 +685,7 @@
                   >
                     <div
                       id="readerStatus"
-                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm"
+                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono border border-borderSubtle bg-appBg text-textMuted shadow-sm min-w-[160px] justify-start"
                     >
                       Loading…
                     </div>
@@ -823,20 +839,30 @@
       <!-- Provider Selection -->
       <div class="mb-4">
         <label
-          for="providerSelect"
+          for="providerDropdownTrigger"
           class="block text-sm font-medium text-white mb-2"
         >
           AI Provider
         </label>
-        <select
-          id="providerSelect"
-          class="w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn mb-4"
-        >
-          <option value="openai">OpenAI</option>
-          <option value="groq">Groq</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="gemini">Google Gemini</option>
-        </select>
+        <div id="providerDropdown" data-dropdown class="relative mb-4">
+          <button
+            id="providerDropdownTrigger"
+            type="button"
+            data-dropdown-trigger
+            class="ui-dropdown-trigger w-full bg-appBg border border-borderSubtle rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-hn inline-flex items-center justify-between"
+          >
+            <span data-dropdown-label>OpenAI</span>
+            <svg data-dropdown-caret class="w-4 h-4 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <ul data-dropdown-menu hidden class="ui-dropdown-menu absolute left-0 right-0 mt-1 z-50">
+            <li><button type="button" data-dropdown-item data-value="openai">OpenAI</button></li>
+            <li><button type="button" data-dropdown-item data-value="groq">Groq</button></li>
+            <li><button type="button" data-dropdown-item data-value="openrouter">OpenRouter</button></li>
+            <li><button type="button" data-dropdown-item data-value="gemini">Google Gemini</button></li>
+          </ul>
+        </div>
       </div>
 
       <!-- Model Input -->

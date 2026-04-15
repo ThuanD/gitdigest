@@ -9,10 +9,10 @@ export const closeSettingsBtn = q("closeSettingsBtn");
 export const saveKeyBtn = q("saveKeyBtn");
 export const clearKeyBtn = q("clearKeyBtn");
 export const apiKeyInput = q("apiKeyInput");
-export const providerSelect = q("providerSelect");
+export const providerDropdown = q("providerDropdown");
 export const modelInput = q("modelInput");
 export const modelHint = q("modelHint");
-export const langSelect = q("langSelect");
+export const langDropdown = q("langDropdown");
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 export const statusDot = q("statusDot");
@@ -25,14 +25,17 @@ export const feedPane = q("feedPane");
 export const emptyState = q("emptyState");
 export const activityGraph = q("activityGraph");
 
+// ─── Nav tabs ─────────────────────────────────────────────────────────────────
+export const navTrendsBtn = q("navTrendsBtn");
+
 // ─── Feed-kind buttons ────────────────────────────────────────────────────────
 export const feedKindDaily = q("feedKindDaily");
 export const feedKindWeekly = q("feedKindWeekly");
 export const feedKindMonthly = q("feedKindMonthly");
 
-// ─── Hide-read toggle ─────────────────────────────────────────────────────────
+// ─── Filter buttons ───────────────────────────────────────────────────────────
 export const hideReadToggle = q("hideReadToggle");
-export const toggleKnob = q("toggleKnob");
+export const favOnlyToggle = q("favOnlyToggle");
 
 // ─── Reader pane ──────────────────────────────────────────────────────────────
 export const readerPane = q("readerPane");

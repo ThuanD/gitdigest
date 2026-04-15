@@ -884,6 +884,29 @@ export function loadChatContent(repo, container) {
 // Re-renders chip list and re-wires input handlers; messages persist in DOM
 // until the user navigates away or clears.
 
+export function renderWordcloudChatError(title, hint) {
+  const messagesEl = document.getElementById("wordcloudChatMessages");
+  const chipsEl = document.getElementById("wordcloudChatChips");
+  const inputEl = document.getElementById("wordcloudChatInput");
+  const sendBtn = document.getElementById("wordcloudChatSendBtn");
+  if (!messagesEl) return;
+
+  cleanupWordcloudChatEvents();
+
+  if (chipsEl) chipsEl.innerHTML = "";
+  messagesEl.innerHTML = `
+    <div class="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
+      <p class="text-sm text-textMuted mb-1">${escapeHtml(title)}</p>
+      <p class="text-xs text-textMuted/60">${escapeHtml(hint)}</p>
+    </div>`;
+
+  if (inputEl) {
+    inputEl.disabled = true;
+    inputEl.placeholder = "Chat unavailable";
+  }
+  if (sendBtn) sendBtn.disabled = true;
+}
+
 export function initWordcloudChat(feedKind, wordcloudContextText) {
   const messagesEl = document.getElementById("wordcloudChatMessages");
   const chipsEl = document.getElementById("wordcloudChatChips");
@@ -898,6 +921,11 @@ export function initWordcloudChat(feedKind, wordcloudContextText) {
   // Clear previous chips but load persisted messages for current period
   chipsEl.innerHTML = "";
   messagesEl.innerHTML = "";
+
+  // Re-enable input (may have been disabled by an earlier error state)
+  inputEl.disabled = false;
+  inputEl.placeholder = inputEl.dataset.originalPlaceholder || "Ask anything about trends…";
+  sendBtn.disabled = false;
 
   const questions =
     state.currentLang === "vi" ? WC_CHAT_QUESTIONS_VI : WC_CHAT_QUESTIONS_EN;

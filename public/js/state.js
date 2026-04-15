@@ -21,6 +21,9 @@ export const state = {
   /** Whether "hide read" filter is active */
   hideReadActive: false,
 
+  /** Whether "favorites only" filter is active */
+  favOnlyActive: false,
+
   /** Repos visible in the feed list (may be filtered) */
   currentRepos: /** @type {object[]} */ ([]),
 
