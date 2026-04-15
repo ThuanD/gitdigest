@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GitDigest — OG Image</title>
+    <link
+      rel="preconnect"
+      href="https://cdn.jsdelivr.net"
+      crossorigin
+    />
+    <style>
+      @font-face {
+        font-family: "Geist Sans";
+        src: url("https://cdn.jsdelivr.net/npm/geist@1.7.0/dist/fonts/geist-sans/Geist-Variable.woff2")
+          format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("https://cdn.jsdelivr.net/npm/geist@1.7.0/dist/fonts/geist-mono/GeistMono-Variable.woff2")
+          format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        font-family: "Geist Sans", ui-sans-serif, sans-serif;
+        color: #e4e4e7;
+        background: #09090b;
+      }
+
+      .canvas {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        background-color: #09090b;
+        background-image:
+          radial-gradient(
+            ellipse 900px 600px at 85% -10%,
+            rgba(139, 92, 246, 0.18),
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse 900px 600px at 10% 110%,
+            rgba(34, 211, 238, 0.14),
+            transparent 55%
+          );
+        overflow: hidden;
+      }
+
+      /* Subtle grid texture */
+      .grid-overlay {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(228, 228, 231, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(228, 228, 231, 0.03) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(
+          ellipse at center,
+          black 30%,
+          transparent 80%
+        );
+      }
+
+      /* Top-right accent glow */
+      .glow-a {
+        position: absolute;
+        top: -120px;
+        right: -80px;
+        width: 520px;
+        height: 520px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(139, 92, 246, 0.35),
+          transparent 65%
+        );
+        filter: blur(12px);
+      }
+      .glow-b {
+        position: absolute;
+        bottom: -150px;
+        left: -80px;
+        width: 480px;
+        height: 480px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(34, 211, 238, 0.28),
+          transparent 65%
+        );
+        filter: blur(12px);
+      }
+
+      .content {
+        position: relative;
+        z-index: 10;
+        height: 100%;
+        padding: 80px 96px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      /* Brand row */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .brand-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        background: linear-gradient(
+          135deg,
+          rgba(139, 92, 246, 0.25),
+          rgba(34, 211, 238, 0.18)
+        );
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow:
+          0 0 0 1px rgba(139, 92, 246, 0.4),
+          0 12px 40px -10px rgba(139, 92, 246, 0.5);
+      }
+      .brand-name {
+        font-size: 38px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        background: linear-gradient(
+          90deg,
+          #e4e4e7,
+          #a78bfa 55%,
+          #22d3ee
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      /* Hero */
+      .hero {
+        max-width: 880px;
+      }
+      .hero-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 13px;
+        color: #a78bfa;
+        background: rgba(139, 92, 246, 0.08);
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        border-radius: 999px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+      }
+      .hero-tag::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #a78bfa;
+        box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+      }
+      .hero-title {
+        font-size: 84px;
+        font-weight: 600;
+        line-height: 1.02;
+        letter-spacing: -0.035em;
+        color: #f4f4f5;
+        margin-bottom: 24px;
+      }
+      .hero-title .accent {
+        background: linear-gradient(90deg, #a78bfa, #22d3ee);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .hero-sub {
+        font-size: 26px;
+        line-height: 1.45;
+        color: #a1a1aa;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+      }
+
+      /* Feature chips row */
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 14px;
+        color: #d4d4d8;
+        background: rgba(24, 24, 27, 0.75);
+        border: 1px solid rgba(63, 63, 70, 0.8);
+        border-radius: 10px;
+        backdrop-filter: blur(8px);
+      }
+      .chip-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      .chip-violet .chip-dot {
+        background: #a78bfa;
+      }
+      .chip-cyan .chip-dot {
+        background: #22d3ee;
+      }
+      .chip-amber .chip-dot {
+        background: #fbbf24;
+      }
+      .chip-green .chip-dot {
+        background: #34d399;
+      }
+      .chip-pink .chip-dot {
+        background: #f472b6;
+      }
+
+      /* Footer row */
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .footer-url {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 15px;
+        color: #71717a;
+        letter-spacing: 0.02em;
+      }
+      .footer-author {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 14px;
+        color: #52525b;
+      }
+      .footer-author .by {
+        color: #3f3f46;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="canvas">
+      <div class="glow-a"></div>
+      <div class="glow-b"></div>
+      <div class="grid-overlay"></div>
+
+      <div class="content">
+        <!-- Brand -->
+        <div class="brand">
+          <div class="brand-icon">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="url(#ogLogoStroke)"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <defs>
+                <linearGradient
+                  id="ogLogoStroke"
+                  x1="0"
+                  y1="0"
+                  x2="24"
+                  y2="24"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop offset="0" stop-color="#a78bfa" />
+                  <stop offset="1" stop-color="#22d3ee" />
+                </linearGradient>
+              </defs>
+              <path d="M18 7 A 7 7 0 1 0 18 17" />
+              <path d="M13 12 L19 12 L19 17" />
+            </svg>
+          </div>
+          <span class="brand-name">GitDigest</span>
+        </div>
+
+        <!-- Hero -->
+        <div class="hero">
+          <div class="hero-tag">GitHub trending · powered by AI</div>
+          <h1 class="hero-title">
+            What's trending,<br />
+            <span class="accent">instantly digested.</span>
+          </h1>
+          <p class="hero-sub">
+            AI summaries, trend wordcloud, favorites, and a reading activity
+            heatmap — in one split-pane dashboard on the edge.
+          </p>
+        </div>
+
+        <!-- Chips + footer -->
+        <div>
+          <div class="chips" style="margin-bottom: 28px">
+            <span class="chip chip-violet"><i class="chip-dot"></i>AI Summaries</span>
+            <span class="chip chip-cyan"><i class="chip-dot"></i>Trend Wordcloud</span>
+            <span class="chip chip-amber"><i class="chip-dot"></i>Favorites</span>
+            <span class="chip chip-green"><i class="chip-dot"></i>Activity Heatmap</span>
+            <span class="chip chip-pink"><i class="chip-dot"></i>Multi-provider</span>
+          </div>
+          <div class="footer">
+            <span class="footer-url">gitdigest.td-rootx.workers.dev</span>
+            <span class="footer-author"><span class="by">built by</span> @ThuanD</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

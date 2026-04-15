@@ -13,12 +13,14 @@
     <meta property="og:description" content="Monitor and manage GitHub trending repository caches with real-time statistics" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://gitdigest.td-rootx.workers.dev/admin" />
-    <meta property="og:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta property="og:image" content="https://gitdigest.td-rootx.workers.dev/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:site_name" content="GitDigest" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="GitDigest Admin - Cache Management" />
     <meta name="twitter:description" content="Monitor and manage GitHub trending repository caches with real-time statistics" />
-    <meta name="twitter:image" content="https://gitdigest.td-rootx.workers.dev/preview.png" />
+    <meta name="twitter:image" content="https://gitdigest.td-rootx.workers.dev/og-image.png" />
     <meta name="twitter:creator" content="@thuandv" />
     <link rel="canonical" href="https://gitdigest.td-rootx.workers.dev/admin" />
     <title>Admin - GitDigest Cache Management</title>
@@ -82,8 +84,15 @@
           <div class="flex items-center gap-3">
             <div class="w-7 h-7 rounded-md flex items-center justify-center shadow-[0_0_0_1px_rgba(139,92,246,0.35),0_6px_20px_-8px_rgba(139,92,246,0.55)]"
                  style="background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(34,211,238,0.18));">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 18 L12 5 L19 18"/><path d="M8 14 H16"/>
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="url(#adminLogoStroke)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <defs>
+                  <linearGradient id="adminLogoStroke" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#a78bfa"/>
+                    <stop offset="1" stop-color="#22d3ee"/>
+                  </linearGradient>
+                </defs>
+                <path d="M18 7 A 7 7 0 1 0 18 17"/>
+                <path d="M13 12 L19 12 L19 17"/>
               </svg>
             </div>
             <h1 class="text-2xl font-semibold tracking-tight">

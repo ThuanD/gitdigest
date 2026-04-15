@@ -1,20 +1,35 @@
 # GitDigest
 
-A modern web application that lists trending GitHub repositories and generates AI-powered summaries with multilingual support. Built with TypeScript, modular JavaScript, and enterprise-grade security features.
+> Discover what's trending on GitHub with AI-powered summaries, a trend wordcloud, and a reading activity heatmap — all in one split-pane dashboard.
 
-**🚀 Live Demo:** https://gitdigest.td-rootx.workers.dev/
+[![Live Demo](https://img.shields.io/badge/live-demo-22d3ee?style=flat-square)](https://gitdigest.td-rootx.workers.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+
+**🚀 Live:** https://gitdigest.td-rootx.workers.dev/
 
 ![gitdigest preview](preview.png)
 
+## Highlights
+
+- **Split-pane dashboard** — browse a feed of trending repos on the left, AI summary / wordcloud / README on the right. Mobile-first responsive layout.
+- **Multi-provider AI** — bring your own key for OpenAI, Groq, OpenRouter, or Gemini. No vendor lock-in.
+- **Zero cold start** — deployed to the edge on Cloudflare Workers, cached per region.
+
 ## Features
 
-- 📊 **Trending Repositories**: Daily, weekly, and monthly GitHub trending repos
-- 🤖 **AI Summaries**: Powered by OpenAI, Groq, OpenRouter, or Gemini
-- 🌍 **Multilingual**: English and Vietnamese support with automatic translation
-- 🔍 **Interactive Q&A**: Ask questions about repositories with AI assistance
-- ☁️ **Word Cloud**: Visual technology trend analysis
-- 🛡️ **Enterprise Security**: Rate limiting, input validation, and abuse prevention
-- 📱 **Responsive Design**: Modern UI with TailwindCSS
+- 📊 **Trending repositories** — daily / weekly / monthly, with language and topic filters
+- 🤖 **AI summaries** — structured technical breakdowns (overview, stack, features, traction)
+- ☁️ **Trend wordcloud** — visual technology trend analysis + category / insight panels
+- 💬 **Chat with AI** — interactive Q&A per repository (grounded on the summary)
+- ⭐ **Favorites & filters** — star repos, filter by favorites / unread, one-click clear all
+- 📅 **Reading activity** — GitHub-style contribution heatmap that tracks what you've read
+- 🌍 **Multilingual** — English & Vietnamese with automatic translation between cached entries
+- 🎨 **Polished motion** — staggered card entrance, slide-in panels, water-flow toggles, subtle hover lifts
+- 🧩 **Custom UI primitives** — dropdowns, compact filter toolbar, status pills, tooltip
+- 🛡️ **Built-in security** — per-IP rate limiting, input validation, prompt-injection escaping
+- 📱 **Responsive** — split-pane on desktop, stack-with-back on mobile
 
 ## Requirements
 
@@ -101,8 +116,8 @@ Routes are implemented in TypeScript (`src/handlers.ts`):
 - `GET /api/wordcloud?period=daily&lang=en` — Technology trend word cloud
 
 ### Admin Endpoints
-- `GET /admin/stats` — Cache statistics and system health
-- `POST /admin/clear` — Clear specific or all caches
+- `GET /api/admin/stats` — Cache statistics and system health
+- `POST /api/admin/clear` — Clear specific or all caches (optional `{ type }` body to clear a single cache)
 
 ### Authentication
 Send `Authorization: Bearer <API key>` header or set `API_KEY` secret.
@@ -158,12 +173,12 @@ Send `Authorization: Bearer <API key>` header or set `API_KEY` secret.
 4. Add tests if applicable
 5. Submit a pull request
 
-## Licence
+## License
 
-This project is licensed under the MIT License — see [LICENCE.md](LICENCE.md).
+This project is licensed under the MIT License — see [LICENSE](LICENSE).
 
 ---
 
-**Built with ❤️ by [thuandz](https://github.com/thuandz)**
+**Built with ❤️ by [ThuanD](https://github.com/ThuanD)**
 
 **Deployed on Cloudflare Workers:** https://gitdigest.td-rootx.workers.dev/

@@ -1,7 +1,32 @@
 {
-  "name": "github-digest-worker",
+  "name": "gitdigest",
   "version": "2.1.0",
   "private": true,
+  "description": "GitHub trending repositories with AI-powered summaries, wordcloud trends, favorites, and a reading activity heatmap. Deployed on Cloudflare Workers.",
+  "homepage": "https://gitdigest.td-rootx.workers.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ThuanD/gitdigest.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ThuanD/gitdigest/issues"
+  },
+  "license": "MIT",
+  "author": "ThuanD",
+  "keywords": [
+    "github",
+    "github-trending",
+    "ai",
+    "llm",
+    "openai",
+    "groq",
+    "openrouter",
+    "gemini",
+    "cloudflare-workers",
+    "typescript",
+    "wordcloud",
+    "summary"
+  ],
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
